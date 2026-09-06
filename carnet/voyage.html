@@ -1,0 +1,2936 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carnet</title>
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Carnet">
+<meta name="theme-color" content="#EEEFF1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101215" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<style>
+/* ==========================================================================
+   Direction visuelle : « la marge du carnet ».
+   Une réglure verticale court le long du journal ; l'heure et les montants
+   vivent dans la marge gauche comme des annotations au stylo, la photo et le
+   lieu occupent la largeur restante.
+   Une seule couleur saturée dans toute l'app (le bleu bille) : toute la
+   couleur restante vient des photos, ce qui les rend automatiquement l'objet
+   le plus important à l'écran.
+   ========================================================================== */
+
+:root {
+  --papier:        #EEEFF1;
+  --papier-haut:   #F8F8FA;   /* feuilles, champs : très légèrement au-dessus */
+  --encre:         #14161C;
+  --graphite:      #5D626E;
+  --bille:         #1F3FE0;
+  --bille-pale:    #E3E7FD;
+  --reglure:       #D6D8DE;
+  --rature:        #B32D25;
+  --rature-pale:   #F7E3E1;
+
+  --police-ui:       -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --police-chiffres: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", "Segoe UI Mono", monospace;
+  --police-texte:    ui-serif, "New York", "Noto Serif", Georgia, serif;
+
+  --marge: 5.5rem;            /* largeur de la marge du carnet */
+  --h-entete: 3.5rem;         /* recalculée en JS pour les en-têtes collants */
+  --rayon: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --papier:      #101215;
+    --papier-haut: #191C21;
+    --encre:       #E9EAEE;
+    --graphite:    #8B909C;
+    --bille:       #6E88FF;
+    --bille-pale:  #1B2340;
+    --reglure:     #262A31;
+    --rature:      #F0796F;
+    --rature-pale: #3A1F1D;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--papier);
+  color: var(--encre);
+  font-family: var(--police-ui);
+  font-size: 16px;
+  line-height: 1.45;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--bille);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Le mouvement répond aux actions, et à rien d'autre. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* --------------------------------------------------------- structure ---- */
+
+#entete {
+  position: sticky; top: 0; z-index: 30;
+  background: var(--papier);
+  padding: calc(env(safe-area-inset-top) + 0.7rem) 1rem 0.55rem;
+  display: flex; align-items: baseline; gap: 0.6rem;
+}
+#entete h1 {
+  font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em;
+  margin: 0; flex: 0 0 auto;
+}
+#entete .entete__ville {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 0.82rem; color: var(--graphite);
+  background: none; border: 0; padding: 0.2rem 0.1rem; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+}
+#entete .entete__ville b { font-weight: 600; color: var(--encre); }
+#entete .entete__actions { flex: 0 0 auto; display: flex; gap: 0.15rem; }
+
+.ico {
+  background: none; border: 0; cursor: pointer;
+  width: 2.6rem; height: 2.6rem;
+  display: grid; place-items: center;
+  color: var(--encre); border-radius: 50%;
+}
+.ico:active { background: var(--reglure); }
+.ico svg { width: 21px; height: 21px; display: block; }
+.ico[aria-pressed="true"] { color: var(--bille); }
+
+#vue {
+  padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+  min-height: 60vh;
+}
+
+.retour {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: none; border: 0; color: var(--bille);
+  padding: 0.4rem 0.2rem; margin: 0 0 0.2rem; cursor: pointer;
+  font-size: 0.9rem;
+}
+
+/* ------------------------------------------------------------ journal ---- */
+
+.jour__entete {
+  position: sticky; top: var(--h-entete); z-index: 20;
+  background: var(--papier);
+  display: grid; grid-template-columns: 1fr auto;
+  align-items: end; gap: 1rem;
+  padding: 1.1rem 1rem 0.35rem;
+  border-bottom: 1px solid var(--reglure);
+  margin-bottom: 0.1rem;
+}
+.jour__date {
+  font-size: 0.9rem; font-weight: 600; letter-spacing: -0.01em;
+}
+.jour__date.est-aujourdhui { color: var(--bille); }
+.jour__totaux {
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  font-size: 0.82rem; text-align: right; line-height: 1.25;
+}
+.jour__totaux .secondaire { color: var(--graphite); font-size: 0.76rem; }
+
+.ligne {
+  display: grid;
+  grid-template-columns: var(--marge) minmax(0, 1fr);
+  align-items: start;
+}
+.ligne__marge {
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  text-align: right; padding: 0.85rem 0.85rem 1.3rem 0.4rem;
+  font-size: 0.78rem; line-height: 1.5;
+}
+.ligne__heure { color: var(--graphite); }
+.ligne__montant { color: var(--bille); display: block; margin-top: 0.15rem; }
+.ligne__euros { color: var(--graphite); display: block; font-size: 0.72rem; }
+.ligne__vide { color: var(--reglure); }
+
+.ligne__corps {
+  border-left: 1px solid var(--reglure);
+  padding: 0.85rem 1rem 1.3rem 1rem;
+  min-width: 0;
+}
+/* Un point sur la réglure marque chaque entrée : la ponctuation du carnet. */
+.ligne__corps { position: relative; }
+.ligne__corps::before {
+  content: ""; position: absolute; left: -3px; top: 1.15rem;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--reglure);
+}
+.ligne--argent .ligne__corps::before { background: var(--bille); }
+
+.ligne__ouvrir {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; padding: 0; cursor: pointer; color: inherit;
+}
+.ligne__nom { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+.ligne__nom.sans-nom { font-weight: 400; font-style: italic; color: var(--graphite); }
+.ligne__meta { font-size: 0.82rem; color: var(--graphite); margin-top: 0.1rem; }
+.ligne__mot { font-family: var(--police-texte); font-size: 0.95rem; margin-top: 0.4rem; }
+
+.photo {
+  display: block; width: 100%; height: auto;
+  background: var(--reglure); border-radius: var(--rayon);
+  margin-bottom: 0.55rem; object-fit: cover;
+}
+.photo--vide { aspect-ratio: 4 / 3; }
+
+.etiquettes { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+.etiquette {
+  font-size: 0.72rem; color: var(--graphite);
+  border: 1px solid var(--reglure); border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+.etiquette--achat { color: var(--bille); border-color: var(--bille); }
+
+/* Animation d'ajout : la ligne se trace, elle n'apparaît pas en fondu. */
+@keyframes tracer { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+.ligne--nouvelle { animation: tracer 200ms ease-out; }
+@keyframes raturer { to { opacity: 0.25; } }
+.ligne--rature { animation: raturer 160ms ease-in forwards; text-decoration: line-through; }
+
+/* ---------------------------------------------------------- fiche lieu ---- */
+
+.fiche { padding: 0.2rem 1rem 0; }
+.fiche__nom { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; margin: 0.2rem 0 0.15rem; }
+.fiche__nom.sans-nom { font-weight: 400; font-style: italic; color: var(--graphite); }
+.fiche__meta { color: var(--graphite); font-size: 0.9rem; }
+.fiche__mot { font-family: var(--police-texte); font-size: 1.02rem; margin: 0.8rem 0 0; }
+.fiche__total {
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid var(--reglure);
+  font-size: 0.85rem; color: var(--graphite);
+}
+.fiche__total b { color: var(--encre); font-weight: 600; }
+
+.etoiles { color: var(--bille); letter-spacing: 0.12em; font-size: 0.95rem; }
+.etoiles .off { color: var(--reglure); }
+
+.galerie {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.4rem; margin: 0.9rem 0 0;
+}
+.galerie img, .galerie button { border-radius: 8px; }
+.galerie button {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  aspect-ratio: 1; overflow: hidden;
+}
+.galerie img { width: 100%; height: 100%; object-fit: cover; margin: 0; }
+.galerie .ajouter {
+  border: 1px dashed var(--reglure); color: var(--graphite);
+  display: grid; place-items: center; font-size: 0.75rem; text-align: center;
+  padding: 0.3rem;
+}
+
+.sous-titre {
+  font-size: 0.78rem; font-weight: 600; color: var(--graphite);
+  padding: 1.4rem 1rem 0.4rem; letter-spacing: 0;
+}
+
+/* -------------------------------------------------------------- listes ---- */
+
+.rangee {
+  display: flex; align-items: center; gap: 0.8rem; width: 100%;
+  padding: 0.85rem 1rem; background: none; border: 0;
+  border-bottom: 1px solid var(--reglure); cursor: pointer;
+  text-align: left; color: inherit;
+}
+.rangee:active { background: var(--papier-haut); }
+.rangee__texte { flex: 1 1 auto; min-width: 0; }
+.rangee__titre { font-size: 0.97rem; font-weight: 550; }
+.rangee__sous { font-size: 0.8rem; color: var(--graphite); }
+.rangee__droite {
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  font-size: 0.82rem; color: var(--graphite); text-align: right; flex: 0 0 auto;
+}
+.rangee__miniature { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; background: var(--reglure); margin: 0; }
+
+/* --------------------------------------------------------------- vide ---- */
+
+.vide { padding: 3.5rem 1.6rem; text-align: center; }
+.vide__trait { width: 1px; height: 3rem; background: var(--bille); margin: 0 auto 1.2rem; }
+.vide h2 { font-family: var(--police-texte); font-weight: 400; font-size: 1.25rem; margin: 0 0 0.4rem; }
+.vide p { color: var(--graphite); font-size: 0.92rem; margin: 0 0 1.2rem; }
+
+/* ------------------------------------------------------ barre de saisie ---- */
+
+#barre {
+  position: fixed; z-index: 40;
+  left: 0; right: 0; bottom: 0;
+  padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--papier) 62%, transparent);
+  display: flex; gap: 0.45rem;
+}
+#barre button {
+  border: 0; cursor: pointer; border-radius: var(--rayon);
+  height: 3.5rem; display: flex; align-items: center; justify-content: center;
+  gap: 0.45rem; font-size: 0.95rem; font-weight: 600;
+}
+.barre__photo { flex: 1 1 auto; background: var(--bille); color: #fff; }
+.barre__photo:active { transform: scale(0.985); }
+.barre__second {
+  flex: 0 0 3.5rem; background: var(--papier-haut);
+  color: var(--encre); border: 1px solid var(--reglure) !important;
+  font-family: var(--police-chiffres);
+}
+#barre svg { width: 20px; height: 20px; }
+
+/* ------------------------------------------------------------ feuilles ---- */
+
+.voile {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(10, 12, 16, 0.42);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+@keyframes monter { from { transform: translateY(1.5rem); } }
+.feuille {
+  background: var(--papier);
+  width: 100%; max-width: 560px;
+  max-height: 92dvh; display: flex; flex-direction: column;
+  border-radius: 16px 16px 0 0;
+  animation: monter 180ms ease-out;
+}
+.feuille__entete {
+  display: grid; grid-template-columns: 4.5rem 1fr 4.5rem;
+  align-items: center; padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--reglure);
+}
+.feuille__titre { text-align: center; font-size: 0.95rem; font-weight: 600; }
+.feuille__entete button {
+  background: none; border: 0; color: var(--bille); cursor: pointer;
+  padding: 0.55rem 0.4rem; font-size: 0.92rem;
+}
+.feuille__entete button.principal { font-weight: 650; text-align: right; }
+.feuille__corps {
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 0.9rem 1rem calc(1.4rem + env(safe-area-inset-bottom));
+}
+
+/* --------------------------------------------------------------- champs ---- */
+
+.champ { margin-bottom: 0.95rem; }
+.champ > label, .legende {
+  display: block; font-size: 0.76rem; font-weight: 600;
+  color: var(--graphite); margin-bottom: 0.28rem;
+}
+.champ input[type=text], .champ input[type=date], .champ input[type=time],
+.champ input[type=number], .champ input[type=password], .champ select, .champ textarea {
+  width: 100%; background: var(--papier-haut);
+  border: 1px solid var(--reglure); border-radius: 8px;
+  padding: 0.62rem 0.7rem; -webkit-appearance: none; appearance: none;
+}
+.champ select { background-image: none; }
+.champ textarea { font-family: var(--police-texte); min-height: 5.5rem; resize: vertical; }
+.champ input:focus, .champ select:focus, .champ textarea:focus {
+  outline: none; border-color: var(--bille);
+}
+.champ .aide { font-size: 0.76rem; color: var(--graphite); margin-top: 0.3rem; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; }
+
+.segments { display: flex; gap: 0.3rem; }
+.segments button {
+  flex: 1; padding: 0.55rem 0.3rem; cursor: pointer;
+  background: var(--papier-haut); border: 1px solid var(--reglure);
+  border-radius: 8px; font-size: 0.85rem;
+}
+.segments button[aria-pressed="true"] {
+  background: var(--bille-pale); border-color: var(--bille); color: var(--bille); font-weight: 600;
+}
+
+.etoiles-saisie { display: flex; gap: 0.15rem; }
+.etoiles-saisie button {
+  background: none; border: 0; cursor: pointer; font-size: 1.4rem;
+  padding: 0.1rem 0.25rem; color: var(--reglure); line-height: 1;
+}
+.etoiles-saisie button.pleine { color: var(--bille); }
+
+.bouton {
+  display: block; width: 100%; text-align: center; cursor: pointer;
+  padding: 0.8rem; border-radius: var(--rayon); font-size: 0.95rem; font-weight: 600;
+  background: var(--bille); color: #fff; border: 0;
+}
+.bouton--calme { background: var(--papier-haut); color: var(--encre); border: 1px solid var(--reglure); }
+.bouton--danger { background: none; color: var(--rature); border: 1px solid var(--rature); }
+.bouton + .bouton { margin-top: 0.5rem; }
+
+.lien-lieu {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  width: 100%; background: var(--papier-haut); border: 1px solid var(--reglure);
+  border-radius: 8px; padding: 0.62rem 0.7rem; cursor: pointer; text-align: left;
+}
+.lien-lieu .chevron { color: var(--bille); flex: 0 0 auto; }
+
+.filtres-actifs {
+  display: flex; gap: 0.35rem; overflow-x: auto; padding: 0.5rem 1rem 0.2rem;
+  scrollbar-width: none;
+}
+.filtres-actifs::-webkit-scrollbar { display: none; }
+.filtres-actifs .puce {
+  flex: 0 0 auto; font-size: 0.78rem; padding: 0.2rem 0.6rem;
+  border-radius: 999px; background: var(--bille-pale); color: var(--bille);
+  border: 0; cursor: pointer; white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- toasts ---- */
+
+#toasts {
+  position: fixed; z-index: 60;
+  left: 0; right: 0; bottom: calc(4.6rem + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 0.4rem;
+  pointer-events: none; padding: 0 0.75rem;
+}
+@keyframes toast-entree { from { transform: translateY(0.6rem); opacity: 0; } }
+.toast {
+  pointer-events: auto;
+  background: var(--encre); color: var(--papier);
+  border-radius: var(--rayon); padding: 0.65rem 0.5rem 0.65rem 0.9rem;
+  font-size: 0.88rem; display: flex; align-items: center; gap: 0.5rem;
+  max-width: 560px; width: 100%;
+  animation: toast-entree 160ms ease-out;
+}
+.toast__texte { flex: 1 1 auto; min-width: 0; }
+.toast button {
+  background: none; border: 0; cursor: pointer; flex: 0 0 auto;
+  color: var(--bille); font-weight: 600; padding: 0.3rem 0.5rem; font-size: 0.88rem;
+}
+@media (prefers-color-scheme: light) { .toast button { color: #8FA4FF; } }
+
+/* ------------------------------------------------- visionneuse photo ---- */
+
+#visionneuse {
+  position: fixed; inset: 0; z-index: 70; background: #0b0d10;
+  display: flex; align-items: center; justify-content: center;
+}
+#visionneuse img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#visionneuse .ico { position: absolute; top: calc(env(safe-area-inset-top) + 0.5rem); right: 0.5rem; color: #fff; }
+
+/* ------------------------------------------------------------ divers ---- */
+
+.bloquant {
+  padding: 4rem 1.5rem; max-width: 34rem; margin: 0 auto;
+  font-family: var(--police-texte);
+}
+.bloquant h1 { font-size: 1.4rem; font-weight: 400; }
+.bloquant p { color: var(--graphite); font-family: var(--police-ui); font-size: 0.95rem; }
+.bloquant code {
+  font-family: var(--police-chiffres); font-size: 0.85rem;
+  background: var(--papier-haut); padding: 0.1rem 0.3rem; border-radius: 4px;
+}
+
+.note-info {
+  font-size: 0.8rem; color: var(--graphite);
+  border-left: 2px solid var(--reglure); padding-left: 0.7rem; margin: 0.9rem 0;
+}
+
+@media (min-width: 620px) {
+  :root { --marge: 6.5rem; }
+  #entete, #vue, .filtres-actifs { max-width: 640px; margin-inline: auto; }
+  #barre { max-width: 640px; margin-inline: auto; }
+}
+</style>
+</head>
+
+<body>
+  <header id="entete" hidden></header>
+  <main id="vue"></main>
+  <nav id="barre" hidden aria-label="Saisie rapide"></nav>
+  <div id="feuilles"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <!-- Deux entrées fichier distinctes : l'appareil photo (chemin rapide) et la
+       photothèque (le soir, au calme). iOS distingue les deux par `capture`. -->
+  <input type="file" id="entree-camera" accept="image/*" capture="environment" hidden>
+  <input type="file" id="entree-galerie" accept="image/*" multiple hidden>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   CARNET DE VOYAGE — phase 1 : saisie et consultation.
+
+   Modèle : deux entités seulement.
+     lieu       — un endroit, géolocalisé, noté, photographié
+     evenement  — rattaché à un lieu, de type 'visite' | 'depense' | 'achat'
+
+   Une visite, une dépense et un achat sont le MÊME objet avec un type
+   différent. Les écrans « mes visites », « mes dépenses », « mes achats » ne
+   sont que des filtres sur cette liste unique — il n'y a jamais trois tables.
+
+   Devises : on stocke toujours le montant d'origine ET le taux du jour.
+   L'euro est calculé à l'affichage, jamais écrit en base.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ constantes -- */
+
+const TYPES_LIEU = ['activité', 'boutique', 'restaurant', 'hébergement', 'transport', 'autre'];
+const TYPES_EVENEMENT = ['visite', 'depense', 'achat'];
+const LIBELLE_EVENEMENT = { visite: 'Visite', depense: 'Dépense', achat: 'Achat' };
+const STATUTS_ACHAT = ['idée', 'acheté', 'offert'];
+const CATEGORIES = ['nourriture', 'transport', 'hébergement', 'activité', 'souvenir', 'cadeau', 'santé', 'divers'];
+const DEVISES_COURANTES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'THB', 'VND', 'IDR', 'INR', 'KRW',
+  'CNY', 'MAD', 'TRY', 'CAD', 'AUD', 'MXN', 'BRL', 'ZAR', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF'];
+
+const RAYON_LIEU_M = 100;      // au-delà, c'est un autre lieu
+const JOURS_CORBEILLE = 30;
+const PHOTO_MAX_PX = 1600;
+const VIGNETTE_MAX_PX = 400;
+const PHOTO_QUALITE = 0.8;
+
+/* ------------------------------------------------------------ utilitaires -- */
+
+const $ = (sel, racine = document) => racine.querySelector(sel);
+
+/** Construction de DOM sans innerHTML : rien de ce que je saisis n'est interprété. */
+const PROPRIETES = new Set(['value', 'checked', 'disabled', 'textContent', 'selected', 'src', 'hidden']);
+function h(balise, attrs, ...enfants) {
+  const e = document.createElement(balise);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'style') Object.assign(e.style, v);
+    else if (k === 'dataset') Object.assign(e.dataset, v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (PROPRIETES.has(k)) e[k] = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const enfant of enfants.flat(4)) {
+    if (enfant === null || enfant === undefined || enfant === false) continue;
+    e.append(enfant instanceof Node ? enfant : document.createTextNode(String(enfant)));
+  }
+  return e;
+}
+
+function svg(chemin, extra) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('fill', 'none');
+  s.setAttribute('stroke', 'currentColor');
+  s.setAttribute('stroke-width', extra || '1.7');
+  s.setAttribute('stroke-linecap', 'round');
+  s.setAttribute('stroke-linejoin', 'round');
+  s.setAttribute('aria-hidden', 'true');
+  // Taille par défaut : sans elle, un SVG hors d'un contexte dimensionné
+  // retomberait sur les 300 × 150 px du navigateur.
+  s.setAttribute('width', '20');
+  s.setAttribute('height', '20');
+  for (const d of [].concat(chemin)) {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d);
+    s.append(p);
+  }
+  return s;
+}
+
+const ICONES = {
+  recherche: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z', 'M16.2 16.2 21 21'],
+  points: ['M12 6h.01', 'M12 12h.01', 'M12 18h.01'],
+  appareil: ['M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-9Z', 'M12 15.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
+  plume: ['M4 20s5.5-.5 9-4 5-9 5-9-5.5 1.5-9 5-5 8-5 8Z', 'M4 20l5-5'],
+  fleche: ['M15 6l-6 6 6 6'],
+  croix: ['M6 6l12 12', 'M18 6 6 18'],
+  chevron: ['M9 6l6 6-6 6'],
+};
+
+const uid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+
+const delai = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* -------------------------------------------------------------- dates ---- */
+
+function isoLocal(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+function heureLocale(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function dateDepuisIso(iso) {
+  const [a, m, j] = String(iso).split('-').map(Number);
+  return new Date(a, (m || 1) - 1, j || 1);
+}
+const FMT_JOUR = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const FMT_JOUR_ANNEE = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const FMT_COURT = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+function formatJour(iso) {
+  const d = dateDepuisIso(iso);
+  const fmt = d.getFullYear() === new Date().getFullYear() ? FMT_JOUR : FMT_JOUR_ANNEE;
+  return fmt.format(d);
+}
+const formatDateCourte = (iso) => FMT_COURT.format(dateDepuisIso(iso));
+
+/* ------------------------------------------------------------- monnaie ---- */
+
+function nombre(v) {
+  if (typeof v === 'number') return v;
+  if (!v) return NaN;
+  // On accepte la virgule décimale française et les espaces de milliers.
+  return parseFloat(String(v).replace(/\s| | /g, '').replace(',', '.'));
+}
+
+function formatMontant(valeur, devise) {
+  if (!isFinite(valeur)) return '';
+  try {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency', currency: devise || 'EUR',
+      maximumFractionDigits: (devise === 'JPY' || devise === 'KRW' || devise === 'VND' || devise === 'IDR') ? 0 : 2,
+    }).format(valeur);
+  } catch (_) {
+    // Code de devise inconnu d'Intl : on affiche quand même quelque chose de juste.
+    return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(valeur) + ' ' + (devise || '');
+  }
+}
+const formatEuros = (v) => formatMontant(v, 'EUR');
+
+/** Conversion à l'affichage uniquement. Le montant en base n'est jamais réécrit. */
+function enEuros(ev) {
+  if (!ev || !isFinite(ev.montant)) return 0;
+  if (ev.devise === 'EUR') return ev.montant;
+  const taux = Number(ev.taux_vers_eur);
+  return isFinite(taux) && taux > 0 ? ev.montant * taux : 0;
+}
+const aUnMontant = (ev) => isFinite(ev.montant) && ev.montant !== null && ev.montant !== 0;
+
+/* ----------------------------------------------------------- géographie ---- */
+
+/** Distance en mètres entre deux points (formule de haversine). */
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/* ==========================================================================
+   BASE DE DONNÉES (IndexedDB)
+
+   Règle absolue du projet : aucune perte de données. Toute écriture passe par
+   `ecrire()`, dont la promesse ne se résout qu'à l'événement `complete` de la
+   transaction. L'interface n'affiche jamais quelque chose comme enregistré
+   avant ce moment-là.
+   ========================================================================== */
+
+const DB = { nom: 'carnet-voyage', version: 1, db: null };
+
+function ouvrirBase() {
+  return new Promise((ok, ko) => {
+    if (!self.indexedDB) return ko(new Error('indexeddb-absent'));
+    let req;
+    try { req = indexedDB.open(DB.nom, DB.version); }
+    catch (e) { return ko(e); }
+
+    req.onupgradeneeded = () => {
+      const db = req.result;
+
+      if (!db.objectStoreNames.contains('lieux')) {
+        const s = db.createObjectStore('lieux', { keyPath: 'id' });
+        s.createIndex('ville', 'ville');
+        s.createIndex('pays', 'pays');
+        s.createIndex('type', 'type');
+      }
+      if (!db.objectStoreNames.contains('evenements')) {
+        const s = db.createObjectStore('evenements', { keyPath: 'id' });
+        s.createIndex('lieu_id', 'lieu_id');
+        s.createIndex('date', 'date');
+        s.createIndex('type', 'type');
+        s.createIndex('beneficiaire', 'beneficiaire');
+      }
+      // Les photos vivent dans leur propre magasin : une ligne de journal se
+      // lit sans jamais charger un seul octet d'image.
+      if (!db.objectStoreNames.contains('photos')) {
+        const s = db.createObjectStore('photos', { keyPath: 'id' });
+        s.createIndex('parent', 'parent_id');
+      }
+      if (!db.objectStoreNames.contains('prefs')) {
+        db.createObjectStore('prefs', { keyPath: 'cle' });
+      }
+    };
+
+    req.onsuccess = () => {
+      DB.db = req.result;
+      // iOS peut fermer la connexion après une longue mise en veille : on la
+      // rouvre à la demande plutôt que de laisser l'app dans un état mort.
+      DB.db.onclose = () => { DB.db = null; };
+      DB.db.onversionchange = () => { DB.db.close(); DB.db = null; };
+      ok(DB.db);
+    };
+    req.onerror = () => ko(req.error || new Error('ouverture-refusee'));
+    req.onblocked = () => ko(new Error('base-bloquee'));
+  });
+}
+
+async function base() {
+  if (!DB.db) await ouvrirBase();
+  return DB.db;
+}
+
+const attendreReq = (req) => new Promise((ok, ko) => {
+  req.onsuccess = () => ok(req.result);
+  req.onerror = () => ko(req.error);
+});
+
+async function lire(magasin, cle) {
+  const db = await base();
+  return attendreReq(db.transaction(magasin, 'readonly').objectStore(magasin).get(cle));
+}
+
+async function lireTout(magasin) {
+  const db = await base();
+  return attendreReq(db.transaction(magasin, 'readonly').objectStore(magasin).getAll());
+}
+
+/**
+ * Écriture confirmée. `fn` reçoit un objet { magasin: objectStore } et empile
+ * ses opérations ; la promesse ne se résout qu'une fois la transaction
+ * réellement validée par le navigateur.
+ */
+async function ecrire(magasins, fn) {
+  const db = await base();
+  const liste = [].concat(magasins);
+  const tx = db.transaction(liste, 'readwrite');
+  const stores = {};
+  for (const m of liste) stores[m] = tx.objectStore(m);
+  let resultat;
+  try { resultat = fn(stores); } catch (e) { try { tx.abort(); } catch (_) {} throw e; }
+  await new Promise((ok, ko) => {
+    tx.oncomplete = () => ok();
+    tx.onerror = () => ko(tx.error);
+    tx.onabort = () => ko(tx.error || new Error('transaction-annulee'));
+  });
+  return resultat;
+}
+
+/** Traduit les échecs d'écriture en phrases utiles, jamais en excuses. */
+function messageErreurEcriture(err) {
+  const nom = err && err.name;
+  if (nom === 'QuotaExceededError') {
+    return "Le stockage du téléphone est plein. Videz la corbeille ou supprimez quelques photos, puis réessayez.";
+  }
+  if (nom === 'InvalidStateError' || nom === 'TransactionInactiveError') {
+    return "La base s'est fermée pendant la mise en veille. Réessayez, elle se rouvre toute seule.";
+  }
+  return "L'enregistrement n'a pas abouti. Rien n'a été modifié — réessayez.";
+}
+
+/* ------------------------------------------------------------- préférences -- */
+
+async function lirePrefs() {
+  const tout = await lireTout('prefs');
+  const p = {};
+  for (const e of tout) p[e.cle] = e.valeur;
+  return p;
+}
+async function ecrirePref(cle, valeur) {
+  await ecrire('prefs', (s) => s.prefs.put({ cle, valeur }));
+  etat.prefs[cle] = valeur;
+}
+
+/* ==========================================================================
+   PHOTOS
+
+   Redimensionnées côté client avant stockage : ~1600 px max en WebP qualité
+   0.8, plus une vignette ~400 px conservée séparément pour les listes.
+   Les deux sont des Blobs dans IndexedDB — jamais de base64, jamais de fichier
+   externe.
+   ========================================================================== */
+
+let formatPhoto = null;   // 'image/webp' ou repli 'image/jpeg' (vieux Safari)
+
+async function detecterFormat() {
+  if (formatPhoto) return formatPhoto;
+  const c = document.createElement('canvas');
+  c.width = c.height = 1;
+  const b = await new Promise((r) => c.toBlob(r, 'image/webp', 0.8));
+  formatPhoto = (b && b.type === 'image/webp') ? 'image/webp' : 'image/jpeg';
+  return formatPhoto;
+}
+
+/** Décodage tolérant : createImageBitmap gère l'orientation EXIF ; sinon, <img>. */
+async function decoder(fichier) {
+  if (self.createImageBitmap) {
+    try { return await createImageBitmap(fichier, { imageOrientation: 'from-image' }); }
+    catch (_) { /* certains Safari refusent les options : on retente sans */ }
+    try { return await createImageBitmap(fichier); } catch (_) {}
+  }
+  const url = URL.createObjectURL(fichier);
+  try {
+    const img = new Image();
+    img.decoding = 'sync';
+    await new Promise((ok, ko) => {
+      img.onload = ok;
+      img.onerror = () => ko(new Error('image-illisible'));
+      img.src = url;
+    });
+    return img;
+  } finally {
+    // L'URL reste valide jusqu'au dessin sur le canvas : on libère après coup.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+}
+
+function dessiner(source, maxCote) {
+  const l = source.width || source.naturalWidth;
+  const hh = source.height || source.naturalHeight;
+  const ratio = Math.min(1, maxCote / Math.max(l, hh));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(l * ratio));
+  c.height = Math.max(1, Math.round(hh * ratio));
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, c.width, c.height);
+  return c;
+}
+
+const versBlob = (canvas, type, q) => new Promise((r) => canvas.toBlob(r, type, q));
+
+/**
+ * Prépare une photo pour le stockage. Renvoie l'enregistrement complet, prêt
+ * à être écrit, plus les dimensions à mémoriser côté entité (pour réserver la
+ * place à l'écran avant même que l'image ne soit chargée).
+ */
+async function preparerPhoto(fichier) {
+  if (!fichier || !fichier.type || !fichier.type.startsWith('image/')) {
+    throw new Error('pas-une-image');
+  }
+  const type = await detecterFormat();
+  const source = await decoder(fichier);
+
+  const grand = dessiner(source, PHOTO_MAX_PX);
+  const petit = dessiner(source, VIGNETTE_MAX_PX);
+  const blob = await versBlob(grand, type, PHOTO_QUALITE);
+  const vignette = await versBlob(petit, type, PHOTO_QUALITE);
+  if (source.close) source.close();
+  if (!blob || !vignette) throw new Error('encodage-impossible');
+
+  const id = uid();
+  return {
+    enregistrement: {
+      id, blob, vignette, type_mime: type,
+      largeur: grand.width, hauteur: grand.height,
+      poids: blob.size, cree_le: new Date().toISOString(),
+      parent_id: null,
+    },
+    reference: { id, l: grand.width, h: grand.height },
+  };
+}
+
+/* ---- URLs d'affichage : cache borné, révoquées en FIFO pour la mémoire ---- */
+
+const urlsVignettes = new Map();
+const ordreVignettes = [];
+
+async function urlVignette(id) {
+  if (urlsVignettes.has(id)) return urlsVignettes.get(id);
+  const p = await lire('photos', id).catch(() => null);
+  if (!p) return null;
+  const url = URL.createObjectURL(p.vignette || p.blob);
+  urlsVignettes.set(id, url);
+  ordreVignettes.push(id);
+  while (ordreVignettes.length > 120) {
+    const vieux = ordreVignettes.shift();
+    URL.revokeObjectURL(urlsVignettes.get(vieux));
+    urlsVignettes.delete(vieux);
+  }
+  return url;
+}
+
+/** Élément <img> qui réserve sa place immédiatement puis se remplit. */
+function imgVignette(ref, classe) {
+  const id = typeof ref === 'string' ? ref : ref.id;
+  const img = h('img', { class: classe || 'photo', alt: '', loading: 'lazy', decoding: 'async' });
+  if (ref && ref.l && ref.h) img.style.aspectRatio = ref.l + ' / ' + ref.h;
+  else img.classList.add('photo--vide');
+  urlVignette(id).then((u) => { if (u) img.src = u; else img.remove(); });
+  return img;
+}
+
+async function ouvrirVisionneuse(id) {
+  const p = await lire('photos', id).catch(() => null);
+  if (!p) return toast("Cette photo est introuvable.");
+  const url = URL.createObjectURL(p.blob || p.vignette);
+  const fermer = () => { vue.remove(); URL.revokeObjectURL(url); };
+  const vue = h('div', { id: 'visionneuse', role: 'dialog', 'aria-label': 'Photo' },
+    h('img', { src: url, alt: '' }),
+    h('button', { class: 'ico', 'aria-label': 'Fermer', onclick: fermer }, svg(ICONES.croix, '2')),
+  );
+  vue.addEventListener('click', (e) => { if (e.target === vue) fermer(); });
+  document.body.append(vue);
+}
+
+/* ==========================================================================
+   ÉTAT
+
+   Tout tient en mémoire : un carnet personnel, ce sont des milliers de lignes
+   au plus. Les photos, elles, restent dans la base et se chargent à la demande.
+   ========================================================================== */
+
+const etat = {
+  vue: { nom: 'journal' },
+  lieux: new Map(),
+  evenements: [],
+  prefs: {},
+  filtres: videsFiltres(),
+};
+
+function videsFiltres() {
+  return { texte: '', typeEv: '', typeLieu: '', ville: '', pays: '', tag: '', du: '', au: '', beneficiaire: '' };
+}
+const filtresActifs = () => Object.values(etat.filtres).some((v) => v !== '');
+
+async function chargerEtat() {
+  const [lieux, evenements, prefs] = await Promise.all([lireTout('lieux'), lireTout('evenements'), lirePrefs()]);
+  // Les éléments en corbeille restent en mémoire : la fiche d'un lieu supprimé
+  // doit rester lisible depuis la corbeille.
+  etat.lieux = new Map(lieux.map((l) => [l.id, l]));
+  etat.evenements = evenements.sort(triChronoDesc);
+  etat.prefs = prefs;
+}
+
+function triChronoDesc(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  const ha = a.heure || '', hb = b.heure || '';
+  if (ha !== hb) return ha < hb ? 1 : -1;
+  return (b.cree_le || '') < (a.cree_le || '') ? -1 : 1;
+}
+
+const evenementsVivants = () => etat.evenements.filter((e) => !e.supprime_le);
+const lieuxVivants = () => [...etat.lieux.values()].filter((l) => !l.supprime_le);
+const lieuDe = (ev) => etat.lieux.get(ev.lieu_id) || null;
+const nomLieu = (l) => (l && l.nom && l.nom.trim()) || '';
+
+function tousLesTags() {
+  const s = new Set();
+  for (const l of lieuxVivants()) for (const t of l.tags || []) s.add(t);
+  return [...s].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+function tousLesBeneficiaires() {
+  const s = new Set();
+  for (const e of evenementsVivants()) if (e.beneficiaire) s.add(e.beneficiaire);
+  return [...s].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+function toutesLesVilles() {
+  const s = new Set();
+  for (const l of lieuxVivants()) if (l.ville) s.add(l.ville);
+  return [...s].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+function tousLesPays() {
+  const s = new Set();
+  for (const l of lieuxVivants()) if (l.pays) s.add(l.pays);
+  return [...s].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+/* ------------------------------------------------------------- filtres ---- */
+
+function evenementsFiltres() {
+  const f = etat.filtres;
+  const texte = f.texte.trim().toLowerCase();
+  return evenementsVivants().filter((ev) => {
+    const lieu = lieuDe(ev);
+    if (f.typeEv && ev.type !== f.typeEv) return false;
+    if (f.typeLieu && (!lieu || lieu.type !== f.typeLieu)) return false;
+    if (f.ville && (!lieu || lieu.ville !== f.ville)) return false;
+    if (f.pays && (!lieu || lieu.pays !== f.pays)) return false;
+    if (f.tag && (!lieu || !(lieu.tags || []).includes(f.tag))) return false;
+    if (f.beneficiaire && ev.beneficiaire !== f.beneficiaire) return false;
+    if (f.du && ev.date < f.du) return false;
+    if (f.au && ev.date > f.au) return false;
+    if (texte) {
+      const foin = [
+        nomLieu(lieu), lieu && lieu.ville, lieu && lieu.pays, lieu && lieu.adresse,
+        lieu && lieu.commentaire, (lieu && lieu.tags || []).join(' '),
+        ev.commentaire, ev.beneficiaire, ev.categorie, ev.devise,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!foin.includes(texte)) return false;
+    }
+    return true;
+  });
+}
+
+/* ==========================================================================
+   RENDU
+   ========================================================================== */
+
+let dernierRendu = 0;
+let idNouvelleLigne = null;   // ligne à faire se tracer au prochain rendu
+
+function rendre() {
+  const conteneur = $('#vue');
+  conteneur.textContent = '';
+  $('#entete').hidden = false;
+  $('#barre').hidden = etat.vue.nom !== 'journal' && etat.vue.nom !== 'lieu';
+
+  rendreEntete();
+  rendreBarre();
+
+  const parVue = {
+    journal: vueJournal,
+    lieu: vueLieu,
+    corbeille: vueCorbeille,
+    reglages: vueReglages,
+  };
+  conteneur.append((parVue[etat.vue.nom] || vueJournal)());
+
+  // Les en-têtes de jour se collent juste sous la barre de titre.
+  requestAnimationFrame(() => {
+    document.documentElement.style.setProperty('--h-entete', $('#entete').offsetHeight + 'px');
+  });
+  dernierRendu = Date.now();
+  idNouvelleLigne = null;
+}
+
+/* ------------------------------------------------------------- en-tête ---- */
+
+function rendreEntete() {
+  const e = $('#entete');
+  e.textContent = '';
+
+  if (etat.vue.nom !== 'journal') {
+    const titres = { lieu: 'Lieu', corbeille: 'Corbeille', reglages: 'Réglages' };
+    e.append(
+      h('button', { class: 'retour', onclick: () => history.back() },
+        svg(ICONES.fleche), 'Carnet'),
+      h('h1', { style: { marginLeft: 'auto', fontSize: '0.9rem', color: 'var(--graphite)' } },
+        titres[etat.vue.nom] || ''),
+    );
+    return;
+  }
+
+  const ville = etat.prefs.ville_courante;
+  e.append(
+    h('h1', null, 'Carnet'),
+    h('button', {
+      class: 'entete__ville', onclick: feuilleVille,
+      'aria-label': 'Changer la ville courante',
+    },
+      ville && ville.ville
+        ? [h('b', null, ville.ville), ville.pays ? ', ' + ville.pays : '']
+        : 'Où êtes-vous ?'),
+    h('div', { class: 'entete__actions' },
+      h('button', {
+        class: 'ico', 'aria-label': 'Rechercher et filtrer',
+        'aria-pressed': filtresActifs() ? 'true' : 'false',
+        onclick: feuilleFiltres,
+      }, svg(ICONES.recherche)),
+      h('button', { class: 'ico', 'aria-label': 'Menu', onclick: feuilleMenu },
+        svg(ICONES.points, '2.4')),
+    ),
+  );
+}
+
+/* -------------------------------------------------- barre de saisie ------- */
+
+function rendreBarre() {
+  const b = $('#barre');
+  b.textContent = '';
+  b.append(
+    // Chemin rapide : un appui, l'appareil photo s'ouvre, tout le reste est
+    // déduit. C'est le critère de réussite numéro un du projet.
+    h('button', { class: 'barre__photo', onclick: saisirParPhoto },
+      svg(ICONES.appareil, '1.9'), 'Photo'),
+    h('button', {
+      class: 'barre__second', 'aria-label': 'Noter un montant',
+      onclick: () => saisirMontant(),
+    }, '€'),
+    h('button', {
+      class: 'barre__second', 'aria-label': 'Écrire une note',
+      onclick: () => saisirNote(),
+    }, svg(ICONES.plume, '1.9')),
+  );
+}
+
+/* ------------------------------------------------------------- journal ---- */
+
+function vueJournal() {
+  const frag = document.createDocumentFragment();
+  const evs = evenementsFiltres();
+
+  if (filtresActifs()) frag.append(rendrePucesFiltres(evs.length));
+
+  if (!evs.length) {
+    frag.append(filtresActifs() ? videFiltres() : videJournal());
+    return frag;
+  }
+
+  // Regroupement par jour, du plus récent au plus ancien.
+  const jours = new Map();
+  for (const ev of evs) {
+    if (!jours.has(ev.date)) jours.set(ev.date, []);
+    jours.get(ev.date).push(ev);
+  }
+
+  const ajd = isoLocal();
+  for (const [date, liste] of jours) {
+    frag.append(
+      h('div', { class: 'jour__entete' },
+        h('div', { class: 'jour__date' + (date === ajd ? ' est-aujourdhui' : '') },
+          date === ajd ? "aujourd'hui" : formatJour(date)),
+        totauxDuJour(liste),
+      ),
+      h('div', null, liste.map(ligneEvenement)),
+    );
+  }
+  return frag;
+}
+
+/**
+ * Total du jour. Si toutes les dépenses du jour sont dans une même devise
+ * étrangère, on affiche ce total d'origine en premier et l'euro en dessous :
+ * c'est dans cette devise-là que la journée a été vécue.
+ */
+function totauxDuJour(liste) {
+  const avecMontant = liste.filter(aUnMontant);
+  if (!avecMontant.length) return h('div', { class: 'jour__totaux' });
+
+  const euros = avecMontant.reduce((s, e) => s + enEuros(e), 0);
+  const devises = new Set(avecMontant.map((e) => e.devise || 'EUR'));
+
+  if (devises.size === 1) {
+    const dev = [...devises][0];
+    const brut = avecMontant.reduce((s, e) => s + e.montant, 0);
+    if (dev === 'EUR') return h('div', { class: 'jour__totaux' }, formatEuros(brut));
+    return h('div', { class: 'jour__totaux' },
+      formatMontant(brut, dev),
+      h('div', { class: 'secondaire' }, formatEuros(euros)));
+  }
+  return h('div', { class: 'jour__totaux' }, formatEuros(euros),
+    h('div', { class: 'secondaire' }, devises.size + ' devises'));
+}
+
+function ligneEvenement(ev) {
+  const lieu = lieuDe(ev);
+  const argent = aUnMontant(ev);
+  const photos = ev.photos || [];
+
+  const marge = h('div', { class: 'ligne__marge' },
+    h('span', { class: 'ligne__heure' }, ev.heure || ''),
+    argent
+      ? [
+        h('span', { class: 'ligne__montant' }, formatMontant(ev.montant, ev.devise)),
+        ev.devise !== 'EUR' && enEuros(ev)
+          ? h('span', { class: 'ligne__euros' }, formatEuros(enEuros(ev)))
+          : null,
+      ]
+      : h('span', { class: 'ligne__montant ligne__vide' }, '—'),
+  );
+
+  const meta = [];
+  if (lieu && lieu.type) meta.push(lieu.type);
+  if (lieu && lieu.ville) meta.push((meta.length ? 'à ' : '') + lieu.ville);
+  if (!lieu) meta.push('lieu supprimé');
+
+  const corps = h('div', { class: 'ligne__corps' },
+    photos.map((p) => h('button', {
+      style: { display: 'block', width: '100%', padding: 0, border: 0, background: 'none', cursor: 'pointer' },
+      'aria-label': 'Agrandir la photo',
+      onclick: () => ouvrirVisionneuse(typeof p === 'string' ? p : p.id),
+    }, imgVignette(p))),
+    h('button', { class: 'ligne__ouvrir', onclick: () => feuilleEvenement(ev) },
+      h('div', { class: 'ligne__nom' + (nomLieu(lieu) ? '' : ' sans-nom') },
+        nomLieu(lieu) || 'Lieu sans nom'),
+      meta.length ? h('div', { class: 'ligne__meta' }, meta.join(' ')) : null,
+      ev.commentaire ? h('div', { class: 'ligne__mot' }, ev.commentaire) : null,
+      etiquettes(ev),
+    ),
+  );
+
+  const cls = 'ligne' + (argent ? ' ligne--argent' : '')
+    + (ev.id === idNouvelleLigne ? ' ligne--nouvelle' : '');
+  return h('div', { class: cls, dataset: { id: ev.id } }, marge, corps);
+}
+
+function etiquettes(ev) {
+  const items = [];
+  if (ev.type === 'achat') {
+    items.push(h('span', { class: 'etiquette etiquette--achat' },
+      ev.statut_achat === 'idée' ? 'à acheter'
+        : ev.statut_achat === 'offert' ? 'offert' : 'acheté'));
+  }
+  if (ev.beneficiaire) items.push(h('span', { class: 'etiquette' }, 'pour ' + ev.beneficiaire));
+  if (ev.categorie && ev.type !== 'visite') items.push(h('span', { class: 'etiquette' }, ev.categorie));
+  return items.length ? h('div', { class: 'etiquettes' }, items) : null;
+}
+
+function rendrePucesFiltres(n) {
+  const f = etat.filtres;
+  const etiq = {
+    texte: (v) => '« ' + v + ' »',
+    typeEv: (v) => LIBELLE_EVENEMENT[v],
+    typeLieu: (v) => v,
+    ville: (v) => v,
+    pays: (v) => v,
+    tag: (v) => '#' + v,
+    beneficiaire: (v) => 'pour ' + v,
+    du: (v) => 'depuis le ' + formatDateCourte(v),
+    au: (v) => "jusqu'au " + formatDateCourte(v),
+  };
+  const puces = Object.entries(f).filter(([, v]) => v !== '').map(([k, v]) =>
+    h('button', {
+      class: 'puce', onclick: () => { etat.filtres[k] = ''; rendre(); },
+      'aria-label': 'Retirer ce filtre',
+    }, etiq[k](v), ' ✕'));
+
+  return h('div', { class: 'filtres-actifs' },
+    puces,
+    h('button', {
+      class: 'puce', style: { background: 'transparent', color: 'var(--graphite)' },
+      onclick: () => { etat.filtres = videsFiltres(); rendre(); },
+    }, n + (n > 1 ? ' entrées' : ' entrée') + ' · tout effacer'),
+  );
+}
+
+function videJournal() {
+  return h('div', { class: 'vide' },
+    h('div', { class: 'vide__trait' }),
+    h('h2', null, 'La première page est blanche.'),
+    h('p', null, "Prenez une photo : le lieu, l'heure et la position sont déduits tout seuls. Le reste s'écrit le soir."),
+    h('button', { class: 'bouton', onclick: saisirParPhoto }, 'Ouvrir l’appareil photo'),
+  );
+}
+
+function videFiltres() {
+  return h('div', { class: 'vide' },
+    h('div', { class: 'vide__trait', style: { background: 'var(--reglure)' } }),
+    h('h2', null, 'Rien sous ces filtres.'),
+    h('p', null, 'Le carnet contient autre chose — élargissez la recherche.'),
+    h('button', {
+      class: 'bouton bouton--calme',
+      onclick: () => { etat.filtres = videsFiltres(); rendre(); },
+    }, 'Effacer les filtres'),
+  );
+}
+
+/* ---------------------------------------------------------- fiche lieu ---- */
+
+function vueLieu() {
+  const lieu = etat.lieux.get(etat.vue.lieu_id);
+  if (!lieu) return h('div', { class: 'vide' }, h('h2', null, 'Ce lieu n’existe plus.'));
+  if (lieu.supprime_le) {
+    return h('div', { class: 'vide' },
+      h('div', { class: 'vide__trait', style: { background: 'var(--reglure)' } }),
+      h('h2', null, 'Ce lieu est à la corbeille.'),
+      h('p', null, 'Il y reste ' + JOURS_CORBEILLE + ' jours à partir de sa suppression.'),
+      h('button', { class: 'bouton bouton--calme', onclick: () => naviguer({ nom: 'corbeille' }) },
+        'Ouvrir la corbeille'));
+  }
+
+  const evs = etat.evenements.filter((e) => e.lieu_id === lieu.id && !e.supprime_le);
+  const depenses = evs.filter(aUnMontant);
+  const totalEuros = depenses.reduce((s, e) => s + enEuros(e), 0);
+
+  const meta = [lieu.type, lieu.ville, lieu.pays].filter(Boolean).join(', ');
+
+  const frag = document.createDocumentFragment();
+  frag.append(
+    h('div', { class: 'fiche' },
+      h('h2', { class: 'fiche__nom' + (nomLieu(lieu) ? '' : ' sans-nom') },
+        nomLieu(lieu) || 'Lieu sans nom'),
+      meta ? h('div', { class: 'fiche__meta' }, meta) : null,
+      lieu.adresse ? h('div', { class: 'fiche__meta' }, lieu.adresse) : null,
+      lieu.note ? h('div', { class: 'etoiles', 'aria-label': lieu.note + ' sur 5' },
+        '★'.repeat(lieu.note), h('span', { class: 'off' }, '★'.repeat(5 - lieu.note))) : null,
+      lieu.tags && lieu.tags.length
+        ? h('div', { class: 'etiquettes' }, lieu.tags.map((t) =>
+          h('button', {
+            class: 'etiquette', style: { cursor: 'pointer' },
+            onclick: () => { etat.filtres = videsFiltres(); etat.filtres.tag = t; naviguer({ nom: 'journal' }); },
+          }, '#' + t)))
+        : null,
+      lieu.commentaire ? h('p', { class: 'fiche__mot' }, lieu.commentaire) : null,
+
+      h('div', { class: 'fiche__total' },
+        evs.length + (evs.length > 1 ? ' entrées' : ' entrée'),
+        totalEuros ? [' · ', h('b', null, formatEuros(totalEuros)), ' dépensés ici'] : null),
+
+      h('div', { class: 'galerie' },
+        (lieu.photos || []).map((p) => h('button', {
+          'aria-label': 'Agrandir la photo',
+          onclick: () => ouvrirVisionneuse(typeof p === 'string' ? p : p.id),
+        }, imgVignette(p, ''))),
+        h('button', {
+          class: 'ajouter', onclick: () => ajouterPhotosA('lieu', lieu.id),
+        }, '+ photo'),
+      ),
+
+      h('div', { style: { marginTop: '1.2rem' } },
+        h('button', { class: 'bouton bouton--calme', onclick: () => feuilleLieu(lieu) }, 'Modifier ce lieu')),
+    ),
+  );
+
+  if (evs.length) {
+    frag.append(h('div', { class: 'sous-titre' }, 'Sur place'));
+    // Même liste, même composant que le journal : ce sont les mêmes objets.
+    const jours = new Map();
+    for (const ev of evs) {
+      if (!jours.has(ev.date)) jours.set(ev.date, []);
+      jours.get(ev.date).push(ev);
+    }
+    for (const [date, liste] of jours) {
+      frag.append(
+        h('div', { class: 'jour__entete' },
+          h('div', { class: 'jour__date' }, formatJour(date)),
+          totauxDuJour(liste)),
+        h('div', null, liste.map(ligneEvenement)),
+      );
+    }
+  }
+  return frag;
+}
+
+/* ----------------------------------------------------------- corbeille ---- */
+
+function vueCorbeille() {
+  const lieuxSupprimes = [...etat.lieux.values()].filter((l) => l.supprime_le);
+  const evsSupprimes = etat.evenements.filter((e) => e.supprime_le && !e.supprime_avec);
+
+  if (!lieuxSupprimes.length && !evsSupprimes.length) {
+    return h('div', { class: 'vide' },
+      h('div', { class: 'vide__trait', style: { background: 'var(--reglure)' } }),
+      h('h2', null, 'La corbeille est vide.'),
+      h('p', null, "Ce que vous supprimez reste ici " + JOURS_CORBEILLE + " jours avant de disparaître pour de bon."));
+  }
+
+  const frag = document.createDocumentFragment();
+  frag.append(h('div', { class: 'sous-titre' },
+    'Effacés définitivement ' + JOURS_CORBEILLE + ' jours après leur suppression'));
+
+  const rangeeCorbeille = (titre, sous, restaurer, detruire) =>
+    h('div', { class: 'rangee' },
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' }, titre),
+        h('div', { class: 'rangee__sous' }, sous)),
+      h('button', {
+        class: 'ico', 'aria-label': 'Restaurer', style: { width: '3rem' },
+        onclick: restaurer,
+      }, h('span', { style: { color: 'var(--bille)', fontSize: '0.85rem', fontWeight: '600' } }, 'Rendre')),
+      h('button', {
+        class: 'ico', 'aria-label': 'Supprimer définitivement', style: { width: '2.2rem', color: 'var(--rature)' },
+        onclick: detruire,
+      }, svg(ICONES.croix, '2')),
+    );
+
+  for (const l of lieuxSupprimes) {
+    const n = etat.evenements.filter((e) => e.lieu_id === l.id).length;
+    frag.append(rangeeCorbeille(
+      nomLieu(l) || 'Lieu sans nom',
+      'Lieu' + (n ? ' et ses ' + n + ' entrées' : '') + ' · supprimé le ' + formatDateCourte(l.supprime_le.slice(0, 10)),
+      () => restaurerLieu(l),
+      () => detruireLieu(l),
+    ));
+  }
+  for (const ev of evsSupprimes) {
+    const lieu = lieuDe(ev);
+    frag.append(rangeeCorbeille(
+      LIBELLE_EVENEMENT[ev.type] + (nomLieu(lieu) ? ' — ' + nomLieu(lieu) : ''),
+      formatDateCourte(ev.date) + ' · supprimée le ' + formatDateCourte(ev.supprime_le.slice(0, 10)),
+      () => restaurerEvenement(ev),
+      () => detruireEvenement(ev),
+    ));
+  }
+  return frag;
+}
+
+/* ------------------------------------------------------------ réglages ---- */
+
+function vueReglages() {
+  const frag = document.createDocumentFragment();
+  const ville = etat.prefs.ville_courante || {};
+  const taux = etat.prefs.taux || {};
+
+  frag.append(
+    h('div', { class: 'sous-titre' }, 'Où je suis'),
+    h('button', { class: 'rangee', onclick: feuilleVille },
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' }, ville.ville || 'Non renseignée'),
+        h('div', { class: 'rangee__sous' },
+          ville.pays || 'Tout nouveau lieu hérite de cette ville')),
+      h('div', { class: 'rangee__droite' }, svg(ICONES.chevron)),
+    ),
+
+    h('div', { class: 'sous-titre' }, 'Taux de change connus'),
+  );
+
+  const devises = Object.keys(taux).sort();
+  if (!devises.length) {
+    frag.append(h('p', { class: 'note-info', style: { margin: '0 1rem' } },
+      "Aucun taux enregistré pour l'instant. Le premier montant saisi dans une devise étrangère le créera, et il sera reproposé ensuite."));
+  }
+  for (const d of devises) {
+    frag.append(h('button', { class: 'rangee', onclick: () => feuilleTaux(d) },
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' }, '1 ' + d),
+        h('div', { class: 'rangee__sous' }, '= ' + formatEuros(taux[d]))),
+      h('div', { class: 'rangee__droite' }, '1 € = ' + arrondiLisible(1 / taux[d]) + ' ' + d),
+    ));
+  }
+  frag.append(h('div', { style: { padding: '0.9rem 1rem' } },
+    h('button', { class: 'bouton bouton--calme', onclick: () => feuilleTaux(null) }, 'Ajouter un taux')));
+
+  frag.append(
+    h('div', { class: 'sous-titre' }, 'Stockage'),
+    h('div', { id: 'zone-stockage', style: { padding: '0 1rem' } },
+      h('p', { class: 'note-info', style: { margin: 0 } }, 'Calcul en cours…')),
+    h('div', { style: { padding: '0.9rem 1rem' } },
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => naviguer({ nom: 'corbeille' }),
+      }, 'Ouvrir la corbeille')),
+
+    h('div', { class: 'sous-titre' }, 'Application'),
+    h('p', { class: 'note-info', style: { margin: '0 1rem' } },
+      'Phase 1 — saisie et consultation. ',
+      navigator.onLine ? 'En ligne.' : 'Hors ligne : tout fonctionne quand même.'),
+    h('div', { style: { padding: '0.9rem 1rem' } },
+      h('button', { class: 'bouton bouton--calme', onclick: chercherMiseAJour }, 'Chercher une mise à jour')),
+  );
+
+  decrireStockage();
+  return frag;
+}
+
+function arrondiLisible(v) {
+  if (!isFinite(v)) return '?';
+  if (v >= 100) return v.toFixed(0);
+  if (v >= 1) return v.toFixed(2);
+  return v.toPrecision(3);
+}
+
+async function decrireStockage() {
+  const zone = $('#zone-stockage');
+  if (!zone) return;
+  const nbPhotos = (await lireTout('photos').catch(() => [])).length;
+  let texte = nbPhotos + (nbPhotos > 1 ? ' photos' : ' photo') + ' · '
+    + lieuxVivants().length + ' lieux · ' + evenementsVivants().length + ' entrées';
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const { usage, quota } = await navigator.storage.estimate();
+      if (usage && quota) {
+        texte += ' — ' + (usage / 1048576).toFixed(1) + ' Mo utilisés sur '
+          + (quota / 1048576).toFixed(0) + ' Mo disponibles';
+      }
+    } catch (_) {}
+  }
+  let persiste = null;
+  if (navigator.storage && navigator.storage.persisted) {
+    try { persiste = await navigator.storage.persisted(); } catch (_) {}
+  }
+  zone.textContent = '';
+  zone.append(h('p', { class: 'note-info', style: { margin: 0 } }, texte,
+    persiste === false
+      ? " Le navigateur peut effacer ces données s'il manque de place : installez l'app sur l'écran d'accueil pour l'en empêcher."
+      : persiste === true ? ' Stockage protégé contre l’effacement automatique.' : ''));
+}
+
+/* ==========================================================================
+   FEUILLES (panneaux modaux)
+   ========================================================================== */
+
+const feuillesOuvertes = [];
+/*
+  Fermer une feuille consomme une entrée d'historique (pour que le bouton
+  « retour » du téléphone ferme la feuille plutôt que de quitter l'app).
+  `history.back()` est asynchrone : enchaîner une fermeture et une navigation
+  ferait s'écraser les deux. Toute suite d'action est donc mise en attente ici
+  et exécutée une fois l'historique réellement revenu en arrière.
+*/
+let popsAIgnorer = 0;
+let apresPops = [];
+
+function viderApresPops() {
+  const liste = apresPops;
+  apresPops = [];
+  for (const fn of liste) setTimeout(fn, 0);
+}
+
+function ouvrirFeuille({ titre, corps, valider, labelValider }) {
+  const f = { ferme: false };
+
+  /** `puis` : ce qu'il faut faire une fois la feuille vraiment refermée. */
+  const fermer = (viaPop, puis) => {
+    if (f.ferme) { if (puis) setTimeout(puis, 0); return; }
+    f.ferme = true;
+    f.voile.remove();
+    const i = feuillesOuvertes.indexOf(f);
+    if (i >= 0) feuillesOuvertes.splice(i, 1);
+    if (puis) apresPops.push(puis);
+    if (!viaPop) { popsAIgnorer++; history.back(); }
+    else if (popsAIgnorer === 0) viderApresPops();
+  };
+  f.fermer = fermer;
+
+  const boiteCorps = h('div', { class: 'feuille__corps' });
+
+  const feuille = h('div', { class: 'feuille', role: 'dialog', 'aria-modal': 'true', 'aria-label': titre },
+    h('div', { class: 'feuille__entete' },
+      h('button', { onclick: () => fermer() }, valider ? 'Annuler' : 'Fermer'),
+      h('div', { class: 'feuille__titre' }, titre),
+      valider
+        ? h('button', {
+          class: 'principal',
+          onclick: async () => {
+            // `valider` peut renvoyer une fonction : elle sera exécutée après
+            // la fermeture, jamais pendant (voir la note sur l'historique).
+            const r = await valider(boiteCorps);
+            if (r === false) return;
+            fermer(false, typeof r === 'function' ? r : null);
+          },
+        }, labelValider || 'Enregistrer')
+        : h('span'),
+    ),
+    boiteCorps,
+  );
+
+  const voile = h('div', { class: 'voile', onclick: (e) => { if (e.target === voile) fermer(); } }, feuille);
+  f.voile = voile;
+  boiteCorps.append(corps(f));
+
+  $('#feuilles').append(voile);
+  feuillesOuvertes.push(f);
+  history.pushState({ feuille: true }, '');
+  return f;
+}
+
+/** Confirmation explicite. Toute suppression passe par là, sans exception. */
+function confirmer({ titre, message, labelOk, danger }) {
+  return new Promise((resoudre) => {
+    let decide = false;
+    const f = ouvrirFeuille({
+      titre,
+      corps: () => h('div', null,
+        h('p', { style: { marginTop: 0, fontFamily: 'var(--police-texte)', fontSize: '1.02rem' } }, message),
+        h('button', {
+          class: 'bouton ' + (danger ? 'bouton--danger' : ''),
+          onclick: () => { decide = true; f.fermer(); resoudre(true); },
+        }, labelOk),
+        h('button', { class: 'bouton bouton--calme', onclick: () => f.fermer() }, 'Annuler'),
+      ),
+    });
+    // Fermeture par le voile ou par le bouton retour = refus.
+    const observer = setInterval(() => {
+      if (f.ferme) { clearInterval(observer); if (!decide) resoudre(false); }
+    }, 120);
+  });
+}
+
+/* ---------------------------------------------------------------- menu ---- */
+
+function feuilleMenu() {
+  const f = ouvrirFeuille({
+    titre: 'Carnet',
+    corps: () => h('div', null,
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => f.fermer(false, () => naviguer({ nom: 'corbeille' })),
+      }, 'Corbeille'),
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => f.fermer(false, () => naviguer({ nom: 'reglages' })),
+      }, 'Réglages'),
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => f.fermer(false, feuilleListeLieux),
+      }, 'Tous les lieux'),
+    ),
+  });
+}
+
+function feuilleListeLieux() {
+  const lieux = lieuxVivants().sort((a, b) =>
+    (nomLieu(a) || 'zzz').localeCompare(nomLieu(b) || 'zzz', 'fr'));
+  const f = ouvrirFeuille({
+    titre: lieux.length + (lieux.length > 1 ? ' lieux' : ' lieu'),
+    corps: () => lieux.length
+      ? h('div', { style: { margin: '-0.9rem -1rem 0' } }, lieux.map((l) => {
+        const n = etat.evenements.filter((e) => e.lieu_id === l.id && !e.supprime_le).length;
+        return h('button', {
+          class: 'rangee',
+          onclick: () => f.fermer(false, () => naviguer({ nom: 'lieu', lieu_id: l.id })),
+        },
+          (l.photos && l.photos[0]) ? imgVignette(l.photos[0], 'rangee__miniature') : null,
+          h('div', { class: 'rangee__texte' },
+            h('div', { class: 'rangee__titre' }, nomLieu(l) || 'Lieu sans nom'),
+            h('div', { class: 'rangee__sous' }, [l.type, l.ville].filter(Boolean).join(', '))),
+          h('div', { class: 'rangee__droite' }, n || ''),
+        );
+      }))
+      : h('p', { class: 'note-info' }, 'Aucun lieu pour le moment.'),
+  });
+}
+
+/* ---------------------------------------------------------------- ville ---- */
+
+function feuilleVille() {
+  const actuelle = etat.prefs.ville_courante || {};
+  let champVille, champPays;
+  ouvrirFeuille({
+    titre: 'Ville courante',
+    labelValider: 'Enregistrer',
+    corps: () => {
+      champVille = h('input', { type: 'text', value: actuelle.ville || '', placeholder: 'Kyoto', list: 'l-villes', autocomplete: 'off' });
+      champPays = h('input', { type: 'text', value: actuelle.pays || '', placeholder: 'Japon', list: 'l-pays', autocomplete: 'off' });
+      return h('div', null,
+        h('p', { class: 'note-info', style: { marginTop: 0 } },
+          "Sans réseau, le téléphone donne des coordonnées mais aucun nom de ville. Déclarez-la ici une fois : chaque nouveau lieu en héritera jusqu'à ce que vous la changiez."),
+        h('div', { class: 'champ' }, h('label', null, 'Ville'), champVille,
+          h('datalist', { id: 'l-villes' }, toutesLesVilles().map((v) => h('option', { value: v })))),
+        h('div', { class: 'champ' }, h('label', null, 'Pays'), champPays,
+          h('datalist', { id: 'l-pays' }, tousLesPays().map((v) => h('option', { value: v })))),
+      );
+    },
+    valider: async () => {
+      await ecrirePref('ville_courante', {
+        ville: champVille.value.trim(),
+        pays: champPays.value.trim(),
+      });
+      rendre();
+      return true;
+    },
+  });
+}
+
+/* ---------------------------------------------------------------- taux ---- */
+
+function feuilleTaux(deviseExistante) {
+  const taux = etat.prefs.taux || {};
+  let champDevise, champVersEur, champDepuisEur;
+
+  const synchro = (source) => {
+    if (source === 'vers') {
+      const v = nombre(champVersEur.value);
+      champDepuisEur.value = isFinite(v) && v > 0 ? arrondiLisible(1 / v) : '';
+    } else {
+      const v = nombre(champDepuisEur.value);
+      champVersEur.value = isFinite(v) && v > 0 ? Number((1 / v).toPrecision(8)) : '';
+    }
+  };
+
+  ouvrirFeuille({
+    titre: deviseExistante ? 'Taux ' + deviseExistante : 'Nouveau taux',
+    corps: (f) => {
+      champDevise = h('input', {
+        type: 'text', value: deviseExistante || '', placeholder: 'JPY',
+        list: 'l-devises', maxlength: '6', autocapitalize: 'characters', autocomplete: 'off',
+        disabled: !!deviseExistante,
+      });
+      champVersEur = h('input', {
+        type: 'text', inputmode: 'decimal',
+        value: deviseExistante ? String(taux[deviseExistante]) : '',
+        oninput: () => synchro('vers'),
+      });
+      champDepuisEur = h('input', {
+        type: 'text', inputmode: 'decimal',
+        value: deviseExistante ? arrondiLisible(1 / taux[deviseExistante]) : '',
+        oninput: () => synchro('depuis'),
+      });
+      return h('div', null,
+        h('div', { class: 'champ' }, h('label', null, 'Devise'), champDevise,
+          h('datalist', { id: 'l-devises' }, DEVISES_COURANTES.map((d) => h('option', { value: d })))),
+        h('div', { class: 'champ' },
+          h('label', null, '1 unité de cette devise vaut, en euros'), champVersEur),
+        h('div', { class: 'champ' },
+          h('label', null, 'Ou, dans l’autre sens : 1 € vaut'), champDepuisEur,
+          h('div', { class: 'aide' }, 'Les deux champs se répondent. Saisissez celui que vous avez sous les yeux.')),
+        deviseExistante ? h('button', {
+          class: 'bouton bouton--danger',
+          onclick: async () => {
+            const t = { ...(etat.prefs.taux || {}) };
+            delete t[deviseExistante];
+            await ecrirePref('taux', t);
+            f.fermer();
+            rendre();
+          },
+        }, 'Oublier ce taux') : null,
+        h('p', { class: 'note-info' },
+          'Modifier un taux ici ne change aucune entrée déjà enregistrée : chacune garde le taux du jour où vous l’avez saisie.'),
+      );
+    },
+    valider: async () => {
+      const d = (deviseExistante || champDevise.value).trim().toUpperCase();
+      const v = nombre(champVersEur.value);
+      if (!d) { toast('Indiquez le code de la devise, par exemple JPY.'); return false; }
+      if (!isFinite(v) || v <= 0) { toast('Le taux doit être un nombre supérieur à zéro.'); return false; }
+      await ecrirePref('taux', { ...(etat.prefs.taux || {}), [d]: v });
+      rendre();
+      return true;
+    },
+  });
+}
+
+/* -------------------------------------------------------------- filtres ---- */
+
+function feuilleFiltres() {
+  const f0 = { ...etat.filtres };
+  const champs = {};
+
+  const selecteur = (cle, label, options, formate) => {
+    champs[cle] = h('select', null,
+      h('option', { value: '' }, 'Tout'),
+      options.map((o) => h('option', { value: o, selected: f0[cle] === o }, formate ? formate(o) : o)));
+    return h('div', { class: 'champ' }, h('label', null, label), champs[cle]);
+  };
+
+  ouvrirFeuille({
+    titre: 'Rechercher',
+    labelValider: 'Voir',
+    corps: (f) => {
+      champs.texte = h('input', {
+        type: 'text', value: f0.texte, placeholder: 'Un mot, un nom, une note…',
+        autocomplete: 'off', enterkeyhint: 'search',
+      });
+      champs.du = h('input', { type: 'date', value: f0.du });
+      champs.au = h('input', { type: 'date', value: f0.au });
+      return h('div', null,
+        h('div', { class: 'champ' }, h('label', null, 'Texte libre'), champs.texte),
+        selecteur('typeEv', "Type d'entrée", TYPES_EVENEMENT, (t) => LIBELLE_EVENEMENT[t]),
+        selecteur('typeLieu', 'Type de lieu', TYPES_LIEU),
+        h('div', { class: 'duo' },
+          selecteur('ville', 'Ville', toutesLesVilles()),
+          selecteur('pays', 'Pays', tousLesPays())),
+        h('div', { class: 'duo' },
+          selecteur('tag', 'Tag', tousLesTags()),
+          selecteur('beneficiaire', 'Bénéficiaire', tousLesBeneficiaires())),
+        h('div', { class: 'champ' }, h('label', null, 'Période'),
+          h('div', { class: 'duo' }, champs.du, champs.au)),
+        h('button', {
+          class: 'bouton bouton--calme',
+          onclick: () => {
+            etat.filtres = videsFiltres();
+            f.fermer(false, () => { if (etat.vue.nom !== 'journal') naviguer({ nom: 'journal' }); else rendre(); });
+          },
+        }, 'Tout effacer'),
+      );
+    },
+    valider: () => {
+      for (const cle of Object.keys(etat.filtres)) {
+        if (champs[cle]) etat.filtres[cle] = champs[cle].value;
+      }
+      // Rendu après fermeture : les filtres peuvent nous ramener au journal.
+      return () => { if (etat.vue.nom !== 'journal') naviguer({ nom: 'journal' }); else rendre(); };
+    },
+  });
+}
+
+/* ==========================================================================
+   SAISIE RAPIDE
+
+   Objectif : enregistrer quelque chose en moins de cinq secondes, debout dans
+   la rue, à une main, sans réseau. Tout ce qui peut être déduit l'est ; tout
+   ce qui manque s'ajoute le soir.
+   ========================================================================== */
+
+let positionEnCours = null;
+
+/** Demande la position sans jamais bloquer : le résultat arrivera ou pas. */
+function demanderPosition({ frais } = {}) {
+  if (!navigator.geolocation) return Promise.resolve(null);
+  positionEnCours = new Promise((resoudre) => {
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        const pos = { latitude: p.coords.latitude, longitude: p.coords.longitude, precision: p.coords.accuracy };
+        ecrirePref('derniere_position', { ...pos, quand: Date.now() }).catch(() => {});
+        resoudre(pos);
+      },
+      () => resoudre(null),               // refus, panne, intérieur d'un bâtiment : on continue
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: frais ? 0 : 60000 },
+    );
+  });
+  return positionEnCours;
+}
+
+/** Le chemin le plus court : appareil photo, puis tout est déduit. */
+function saisirParPhoto() {
+  demanderPosition();                      // en parallèle de l'ouverture de l'appareil
+  const entree = $('#entree-camera');
+  entree.value = '';
+  entree.click();
+}
+
+$('#entree-camera').addEventListener('change', async (e) => {
+  const fichier = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (fichier) await enregistrerCapture(fichier);
+});
+
+async function enregistrerCapture(fichier) {
+  const t = toast('Enregistrement…', [], 0);
+  try {
+    const alerte = await verifierEspace();
+    if (alerte) toast(alerte);
+
+    const photo = await preparerPhoto(fichier);
+
+    // On n'attend la position que le temps qu'il faut pour rester rapide.
+    const position = await Promise.race([
+      positionEnCours || Promise.resolve(null),
+      delai(2500).then(() => null),
+    ]);
+
+    const { lieu, nouveau } = trouverOuPreparerLieu(position);
+    const maintenant = new Date();
+    const evenement = nouvelEvenement({
+      lieu_id: lieu.id,
+      type: 'visite',
+      date: isoLocal(maintenant),
+      heure: heureLocale(maintenant),
+      photos: [photo.reference],
+    });
+    photo.enregistrement.parent_id = evenement.id;
+
+    // Une seule transaction : la photo, le lieu et l'entrée arrivent ensemble
+    // ou pas du tout. Pas de photo orpheline, pas d'entrée sans image.
+    await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+      s.photos.put(photo.enregistrement);
+      if (nouveau) s.lieux.put(lieu);
+      s.evenements.put(evenement);
+    });
+
+    if (nouveau) etat.lieux.set(lieu.id, lieu);
+    etat.evenements.unshift(evenement);
+    etat.evenements.sort(triChronoDesc);
+    idNouvelleLigne = evenement.id;
+    if (etat.vue.nom !== 'journal' && etat.vue.nom !== 'lieu') etat.vue = { nom: 'journal' };
+    rendre();
+
+    t.fermer();
+    annoncerAjout(evenement, lieu, nouveau);
+
+    // Si la position arrive en retard, elle complète le lieu sans rien écraser.
+    completerPositionPlusTard(lieu, position);
+  } catch (err) {
+    t.fermer();
+    console.error(err);
+    if (err && err.message === 'pas-une-image') toast("Ce fichier n'est pas une image.");
+    else if (err && err.message === 'image-illisible') toast("Cette photo n'a pas pu être lue. Réessayez.");
+    else toast(messageErreurEcriture(err));
+  }
+}
+
+function annoncerAjout(evenement, lieu, nouveau) {
+  const message = nouveau
+    ? 'Enregistré' + (etat.prefs.ville_courante && etat.prefs.ville_courante.ville
+      ? ' à ' + etat.prefs.ville_courante.ville : '')
+    : 'Ajouté à ' + (nomLieu(lieu) || 'un lieu déjà connu');
+
+  toast(message, [
+    { label: nouveau ? 'Nommer' : 'Changer', action: () => nouveau ? feuilleLieu(lieu) : choisirLieu(evenement) },
+    { label: 'Annuler', action: () => annulerAjout(evenement, nouveau ? lieu : null) },
+  ], 7000);
+}
+
+/** Annulation immédiate d'une capture : elle n'a jamais eu lieu, pas de corbeille. */
+async function annulerAjout(evenement, lieu) {
+  try {
+    await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+      for (const p of evenement.photos || []) s.photos.delete(typeof p === 'string' ? p : p.id);
+      s.evenements.delete(evenement.id);
+      if (lieu) s.lieux.delete(lieu.id);
+    });
+    etat.evenements = etat.evenements.filter((e) => e.id !== evenement.id);
+    if (lieu) etat.lieux.delete(lieu.id);
+    rendre();
+    toast('Annulé.');
+  } catch (err) {
+    toast(messageErreurEcriture(err));
+  }
+}
+
+/**
+ * Cherche un lieu déjà enregistré à moins de 100 m. Si on en trouve un, on s'y
+ * rattache plutôt que de créer un doublon ; le toast dit lequel et permet d'en
+ * changer d'un geste.
+ */
+function trouverOuPreparerLieu(position) {
+  if (position) {
+    let meilleur = null, meilleureDistance = Infinity;
+    for (const l of lieuxVivants()) {
+      if (!isFinite(l.latitude) || !isFinite(l.longitude)) continue;
+      const d = distance(position.latitude, position.longitude, l.latitude, l.longitude);
+      if (d < RAYON_LIEU_M && d < meilleureDistance) { meilleur = l; meilleureDistance = d; }
+    }
+    if (meilleur) return { lieu: meilleur, nouveau: false };
+  }
+  return { lieu: nouveauLieu(position), nouveau: true };
+}
+
+function nouveauLieu(position) {
+  const ville = etat.prefs.ville_courante || {};
+  return {
+    id: uid(),
+    nom: '',                       // nommé plus tard : ne pas ralentir la saisie
+    type: 'autre',
+    ville: ville.ville || '',
+    pays: ville.pays || '',
+    latitude: position ? position.latitude : null,
+    longitude: position ? position.longitude : null,
+    adresse: '',
+    note: 0,
+    commentaire: '',
+    tags: [],
+    photos: [],
+    cree_le: new Date().toISOString(),
+    supprime_le: null,
+  };
+}
+
+function nouvelEvenement(champs) {
+  return Object.assign({
+    id: uid(),
+    lieu_id: null,
+    date: isoLocal(),
+    heure: heureLocale(),
+    type: 'visite',
+    montant: null,
+    devise: etat.prefs.devise_courante || 'EUR',
+    taux_vers_eur: 1,
+    categorie: '',
+    beneficiaire: '',
+    statut_achat: '',
+    commentaire: '',
+    photos: [],
+    cree_le: new Date().toISOString(),
+    supprime_le: null,
+  }, champs);
+}
+
+/**
+ * La géolocalisation peut mettre dix secondes en ville dense. Si elle arrive
+ * après coup, on complète le lieu — sans jamais écraser une position déjà là.
+ */
+function completerPositionPlusTard(lieu, dejaObtenue) {
+  if (dejaObtenue || !positionEnCours) return;
+  positionEnCours.then(async (pos) => {
+    if (!pos) return;
+    const frais = etat.lieux.get(lieu.id);
+    if (!frais || isFinite(frais.latitude)) return;
+    frais.latitude = pos.latitude;
+    frais.longitude = pos.longitude;
+    try {
+      await ecrire('lieux', (s) => s.lieux.put(frais));
+      if (etat.vue.nom === 'lieu') rendre();
+    } catch (_) { /* sans position, le lieu reste parfaitement utilisable */ }
+  });
+}
+
+async function verifierEspace() {
+  if (!navigator.storage || !navigator.storage.estimate) return null;
+  try {
+    const { usage, quota } = await navigator.storage.estimate();
+    if (quota && usage / quota > 0.92) {
+      return "Il reste peu de place sur le téléphone. Videz la corbeille avant que les photos ne soient refusées.";
+    }
+  } catch (_) {}
+  return null;
+}
+
+/* ------------------------------------------- saisie d'un montant seul ----- */
+
+function saisirMontant() {
+  demanderPosition();
+  const devise = etat.prefs.devise_courante || 'EUR';
+  const taux = etat.prefs.taux || {};
+  let champMontant, champDevise, apercu;
+
+  const rafraichir = () => {
+    const m = nombre(champMontant.value);
+    const d = champDevise.value.trim().toUpperCase() || 'EUR';
+    const t = d === 'EUR' ? 1 : taux[d];
+    apercu.textContent = (isFinite(m) && d !== 'EUR' && t)
+      ? '≈ ' + formatEuros(m * t)
+      : (d !== 'EUR' && !t ? 'Taux inconnu — à saisir en enregistrant' : '');
+  };
+
+  const f = ouvrirFeuille({
+    titre: 'Montant',
+    labelValider: 'Enregistrer',
+    corps: () => {
+      champMontant = h('input', {
+        type: 'text', inputmode: 'decimal', placeholder: '0',
+        style: { fontSize: '1.6rem', fontFamily: 'var(--police-chiffres)', textAlign: 'right' },
+        oninput: rafraichir,
+      });
+      champDevise = h('input', {
+        type: 'text', value: devise, list: 'l-devises-2', maxlength: '6',
+        autocapitalize: 'characters', autocomplete: 'off',
+        style: { textAlign: 'center', fontFamily: 'var(--police-chiffres)' },
+        oninput: rafraichir,
+      });
+      apercu = h('div', { class: 'aide', style: { textAlign: 'right' } });
+      setTimeout(() => champMontant.focus(), 60);
+      return h('div', null,
+        h('div', { class: 'champ' },
+          h('div', { class: 'duo', style: { gridTemplateColumns: '2fr 1fr' } }, champMontant, champDevise),
+          h('datalist', { id: 'l-devises-2' },
+            [...new Set([...Object.keys(taux), ...DEVISES_COURANTES])].map((d) => h('option', { value: d }))),
+          apercu),
+        h('p', { class: 'note-info' },
+          'Le lieu est déduit de votre position. Vous pourrez préciser la catégorie et le bénéficiaire ce soir.'),
+      );
+    },
+    valider: async () => {
+      const m = nombre(champMontant.value);
+      if (!isFinite(m)) { toast('Saisissez un montant.'); return false; }
+      const d = champDevise.value.trim().toUpperCase() || 'EUR';
+      const t = d === 'EUR' ? 1 : (etat.prefs.taux || {})[d];
+      if (!t) {
+        // Une devise sans taux connu : on demande le taux maintenant, une fois.
+        f.fermer(false, () => demanderTauxPuis(d, (tauxSaisi) => creerDepenseRapide(m, d, tauxSaisi)));
+        return false;
+      }
+      await creerDepenseRapide(m, d, t);
+      return true;
+    },
+  });
+}
+
+function demanderTauxPuis(devise, suite) {
+  let champ;
+  ouvrirFeuille({
+    titre: 'Taux du jour',
+    labelValider: 'Continuer',
+    corps: () => {
+      champ = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'ex. 158' });
+      setTimeout(() => champ.focus(), 60);
+      return h('div', null,
+        h('div', { class: 'champ' }, h('label', null, '1 € vaut combien de ' + devise + ' ?'), champ,
+          h('div', { class: 'aide' }, 'Saisi une seule fois : il sera reproposé pour les prochains montants.')),
+        h('p', { class: 'note-info' },
+          'Le montant reste enregistré en ' + devise + ' pour toujours. L’euro n’est qu’un affichage.'),
+      );
+    },
+    valider: async () => {
+      const v = nombre(champ.value);
+      if (!isFinite(v) || v <= 0) { toast('Un nombre supérieur à zéro, par exemple 158.'); return false; }
+      const versEur = 1 / v;
+      await ecrirePref('taux', { ...(etat.prefs.taux || {}), [devise]: versEur });
+      await suite(versEur);
+      return true;
+    },
+  });
+}
+
+async function creerDepenseRapide(montant, devise, taux) {
+  try {
+    const position = await Promise.race([
+      positionEnCours || Promise.resolve(null),
+      delai(2000).then(() => null),
+    ]);
+    const { lieu, nouveau } = trouverOuPreparerLieu(position);
+    const maintenant = new Date();
+    const ev = nouvelEvenement({
+      lieu_id: lieu.id, type: 'depense',
+      date: isoLocal(maintenant), heure: heureLocale(maintenant),
+      montant, devise, taux_vers_eur: taux,
+    });
+
+    await ecrire(['lieux', 'evenements'], (s) => {
+      if (nouveau) s.lieux.put(lieu);
+      s.evenements.put(ev);
+    });
+    await ecrirePref('devise_courante', devise);
+
+    if (nouveau) etat.lieux.set(lieu.id, lieu);
+    etat.evenements.unshift(ev);
+    etat.evenements.sort(triChronoDesc);
+    idNouvelleLigne = ev.id;
+    if (etat.vue.nom !== 'journal' && etat.vue.nom !== 'lieu') etat.vue = { nom: 'journal' };
+    rendre();
+    annoncerAjout(ev, lieu, nouveau);
+    completerPositionPlusTard(lieu, position);
+  } catch (err) {
+    console.error(err);
+    toast(messageErreurEcriture(err));
+  }
+}
+
+/* ------------------------------------------------- saisie d'une note ----- */
+
+function saisirNote() {
+  demanderPosition();
+  Promise.race([positionEnCours, delai(2000).then(() => null)]).then((position) => {
+    const { lieu, nouveau } = trouverOuPreparerLieu(position);
+    const maintenant = new Date();
+    const ev = nouvelEvenement({
+      lieu_id: lieu.id, type: 'visite',
+      date: isoLocal(maintenant), heure: heureLocale(maintenant),
+    });
+    // Rien n'est écrit tant que la feuille n'est pas validée.
+    feuilleEvenement(ev, { creation: true, lieuANouveau: nouveau ? lieu : null });
+  });
+}
+
+/* ==========================================================================
+   ÉDITION
+   ========================================================================== */
+
+function feuilleEvenement(evOrigine, options = {}) {
+  const creation = !!options.creation;
+  const ev = { ...evOrigine, photos: [...(evOrigine.photos || [])] };
+  let lieuCourant = options.lieuANouveau || etat.lieux.get(ev.lieu_id) || null;
+  const champs = {};
+  let corpsFeuille;
+
+  const construire = () => {
+    const boite = h('div');
+    const argent = ev.type === 'depense' || ev.type === 'achat';
+    const taux = etat.prefs.taux || {};
+
+    /* --- type : c'est le même objet, seul le type change --- */
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Type'),
+      h('div', { class: 'segments', role: 'group' }, TYPES_EVENEMENT.map((t) =>
+        h('button', {
+          type: 'button', 'aria-pressed': ev.type === t ? 'true' : 'false',
+          onclick: () => { collecter(); ev.type = t; redessiner(); },
+        }, LIBELLE_EVENEMENT[t]))),
+    ));
+
+    /* --- lieu --- */
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Lieu'),
+      h('button', {
+        class: 'lien-lieu', type: 'button',
+        onclick: () => {
+          collecter();
+          choisirLieu(ev, (l) => { lieuCourant = l; ev.lieu_id = l.id; redessiner(); });
+        },
+      },
+        h('span', null,
+          nomLieu(lieuCourant) || h('i', { style: { color: 'var(--graphite)' } }, 'Lieu sans nom'),
+          lieuCourant && lieuCourant.ville
+            ? h('span', { style: { color: 'var(--graphite)' } }, ' — ' + lieuCourant.ville) : null),
+        h('span', { class: 'chevron' }, svg(ICONES.chevron))),
+      lieuCourant && !creation ? h('div', { class: 'aide' },
+        h('button', {
+          type: 'button',
+          style: { background: 'none', border: 0, color: 'var(--bille)', padding: 0, cursor: 'pointer' },
+          onclick: () => {
+            const f = feuillesOuvertes[feuillesOuvertes.length - 1];
+            if (f) f.fermer(false, () => feuilleLieu(lieuCourant));
+            else feuilleLieu(lieuCourant);
+          },
+        }, 'Modifier ce lieu')) : null,
+    ));
+
+    /* --- date et heure --- */
+    champs.date = h('input', { type: 'date', value: ev.date });
+    champs.heure = h('input', { type: 'time', value: ev.heure || '' });
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Quand'),
+      h('div', { class: 'duo' }, champs.date, champs.heure)));
+
+    /* --- argent : montant d'origine + taux, jamais la conversion --- */
+    if (argent) {
+      champs.montant = h('input', {
+        type: 'text', inputmode: 'decimal',
+        value: isFinite(ev.montant) && ev.montant !== null ? String(ev.montant) : '',
+        style: { fontFamily: 'var(--police-chiffres)', textAlign: 'right' },
+        oninput: majApercu,
+      });
+      champs.devise = h('input', {
+        type: 'text', value: ev.devise || 'EUR', list: 'l-devises-3',
+        maxlength: '6', autocapitalize: 'characters', autocomplete: 'off',
+        style: { fontFamily: 'var(--police-chiffres)', textAlign: 'center' },
+        oninput: () => {
+          const d = champs.devise.value.trim().toUpperCase();
+          if (d && d !== 'EUR' && taux[d]) champs.taux.value = String(taux[d]);
+          if (d === 'EUR') champs.taux.value = '1';
+          majApercu();
+        },
+      });
+      champs.taux = h('input', {
+        type: 'text', inputmode: 'decimal',
+        value: String(ev.taux_vers_eur ?? 1),
+        style: { fontFamily: 'var(--police-chiffres)' },
+        oninput: majApercu,
+      });
+      champs.apercu = h('div', { class: 'aide', style: { textAlign: 'right' } });
+
+      boite.append(h('div', { class: 'champ' },
+        h('span', { class: 'legende' }, 'Montant'),
+        h('div', { class: 'duo', style: { gridTemplateColumns: '2fr 1fr' } }, champs.montant, champs.devise),
+        h('datalist', { id: 'l-devises-3' },
+          [...new Set([...Object.keys(taux), ...DEVISES_COURANTES])].map((d) => h('option', { value: d }))),
+        champs.apercu));
+
+      boite.append(h('div', { class: 'champ' },
+        h('label', null, '1 unité de cette devise, en euros, le jour de la dépense'),
+        champs.taux,
+        h('div', { class: 'aide' },
+          'Le montant reste enregistré dans sa devise d’origine, pour toujours. L’euro est recalculé à l’affichage.')));
+
+      champs.categorie = h('select', null,
+        h('option', { value: '' }, '—'),
+        CATEGORIES.map((c) => h('option', { value: c, selected: ev.categorie === c }, c)));
+      boite.append(h('div', { class: 'champ' }, h('label', null, 'Catégorie'), champs.categorie));
+    }
+
+    /* --- bénéficiaire : un achat pour quelqu'un reste une dépense --- */
+    champs.beneficiaire = h('input', {
+      type: 'text', value: ev.beneficiaire || '', list: 'l-benef',
+      placeholder: 'Marie', autocomplete: 'off',
+    });
+    boite.append(h('div', { class: 'champ' },
+      h('label', null, 'Pour qui ?'), champs.beneficiaire,
+      h('datalist', { id: 'l-benef' }, tousLesBeneficiaires().map((b) => h('option', { value: b }))),
+      h('div', { class: 'aide' }, 'Laissez vide si c’est pour vous.')));
+
+    if (ev.type === 'achat') {
+      boite.append(h('div', { class: 'champ' },
+        h('span', { class: 'legende' }, 'Où en est cet achat ?'),
+        h('div', { class: 'segments', role: 'group' }, STATUTS_ACHAT.map((s) =>
+          h('button', {
+            type: 'button', 'aria-pressed': (ev.statut_achat || 'acheté') === s ? 'true' : 'false',
+            onclick: () => { collecter(); ev.statut_achat = s; redessiner(); },
+          }, s)))));
+    }
+
+    /* --- mot libre --- */
+    champs.commentaire = h('textarea', {
+      placeholder: 'Ce dont vous vous souviendrez dans dix ans…',
+    });
+    champs.commentaire.value = ev.commentaire || '';
+    boite.append(h('div', { class: 'champ' }, h('label', null, 'Note'), champs.commentaire));
+
+    /* --- photos --- */
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Photos'),
+      h('div', { class: 'galerie' },
+        ev.photos.map((p) => h('button', {
+          type: 'button', 'aria-label': 'Retirer cette photo',
+          onclick: async () => {
+            if (!await confirmer({
+              titre: 'Retirer la photo',
+              message: 'Cette photo sera supprimée définitivement de cette entrée.',
+              labelOk: 'Retirer', danger: true,
+            })) return;
+            ev.photos = ev.photos.filter((x) => (x.id || x) !== (p.id || p));
+            photosARetirer.push(p.id || p);
+            redessiner();
+          },
+        }, imgVignette(p, ''))),
+        h('button', {
+          type: 'button', class: 'ajouter',
+          onclick: async () => {
+            const nouvelles = await choisirPhotos();
+            for (const n of nouvelles) { ev.photos.push(n.reference); photosAAjouter.push(n.enregistrement); }
+            redessiner();
+          },
+        }, '+ photo'),
+      ),
+      photosAAjouter.length ? h('div', { class: 'aide' },
+        photosAAjouter.length + ' photo(s) enregistrée(s) à la validation.') : null,
+    ));
+
+    /* --- suppression --- */
+    if (!creation) {
+      boite.append(h('button', {
+        class: 'bouton bouton--danger', type: 'button',
+        onclick: async () => {
+          const f = feuillesOuvertes[feuillesOuvertes.length - 1];
+          if (await supprimerEvenement(evOrigine) && f) f.fermer();
+        },
+      }, 'Mettre à la corbeille'));
+    }
+
+    return boite;
+  };
+
+  const photosAAjouter = [];
+  const photosARetirer = [];
+
+  function majApercu() {
+    if (!champs.apercu) return;
+    const m = nombre(champs.montant.value);
+    const d = champs.devise.value.trim().toUpperCase() || 'EUR';
+    const t = d === 'EUR' ? 1 : nombre(champs.taux.value);
+    champs.apercu.textContent = (isFinite(m) && isFinite(t) && d !== 'EUR')
+      ? '= ' + formatEuros(m * t) : '';
+  }
+
+  /** Recopie les champs visibles dans l'objet en cours d'édition. */
+  function collecter() {
+    if (champs.date) ev.date = champs.date.value || ev.date;
+    if (champs.heure) ev.heure = champs.heure.value;
+    if (champs.commentaire) ev.commentaire = champs.commentaire.value.trim();
+    if (champs.beneficiaire) ev.beneficiaire = champs.beneficiaire.value.trim();
+    if (champs.categorie) ev.categorie = champs.categorie.value;
+    if (champs.montant) {
+      const m = nombre(champs.montant.value);
+      ev.montant = isFinite(m) ? m : null;
+      ev.devise = champs.devise.value.trim().toUpperCase() || 'EUR';
+      const t = nombre(champs.taux.value);
+      ev.taux_vers_eur = ev.devise === 'EUR' ? 1 : (isFinite(t) ? t : null);
+    }
+  }
+
+  function redessiner() {
+    if (!corpsFeuille) return;
+    corpsFeuille.textContent = '';
+    corpsFeuille.append(construire());
+    majApercu();
+  }
+
+  ouvrirFeuille({
+    titre: creation ? 'Nouvelle entrée' : LIBELLE_EVENEMENT[evOrigine.type],
+    labelValider: 'Enregistrer',
+    corps: (f) => {
+      corpsFeuille = h('div');
+      corpsFeuille.append(construire());
+      setTimeout(majApercu, 0);
+      return corpsFeuille;
+    },
+    valider: async () => {
+      collecter();
+
+      // Une visite à laquelle on ajoute un montant devient une dépense : le
+      // type suit l'intention, on ne force pas l'utilisateur à y penser.
+      if (ev.type === 'visite' && aUnMontant(ev)) ev.type = 'depense';
+      if (ev.type === 'achat' && !ev.statut_achat) ev.statut_achat = 'acheté';
+      if (ev.type !== 'achat') ev.statut_achat = '';
+      if (ev.type === 'depense' || ev.type === 'achat') {
+        if (!aUnMontant(ev) && ev.type === 'depense') {
+          // Une dépense sans montant n'a pas de sens : on la remet en visite.
+          ev.type = 'visite';
+        }
+        if (aUnMontant(ev) && ev.devise !== 'EUR' && !(ev.taux_vers_eur > 0)) {
+          toast('Indiquez le taux du jour pour ' + ev.devise + '.');
+          return false;
+        }
+      }
+
+      try {
+        await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+          for (const p of photosAAjouter) { p.parent_id = ev.id; s.photos.put(p); }
+          for (const id of photosARetirer) s.photos.delete(id);
+          if (options.lieuANouveau && !etat.lieux.has(options.lieuANouveau.id)) {
+            s.lieux.put(options.lieuANouveau);
+          }
+          s.evenements.put(ev);
+        });
+      } catch (err) {
+        toast(messageErreurEcriture(err));
+        return false;
+      }
+
+      // Le taux tout juste saisi devient le taux proposé par défaut.
+      if (ev.devise && ev.devise !== 'EUR' && ev.taux_vers_eur > 0) {
+        await ecrirePref('taux', { ...(etat.prefs.taux || {}), [ev.devise]: ev.taux_vers_eur });
+        await ecrirePref('devise_courante', ev.devise);
+      }
+
+      if (options.lieuANouveau) etat.lieux.set(options.lieuANouveau.id, options.lieuANouveau);
+      const i = etat.evenements.findIndex((x) => x.id === ev.id);
+      if (i >= 0) etat.evenements[i] = ev; else etat.evenements.push(ev);
+      etat.evenements.sort(triChronoDesc);
+      if (creation) idNouvelleLigne = ev.id;
+      rendre();
+      return true;
+    },
+  });
+}
+
+function feuilleLieu(lieuOrigine) {
+  const lieu = { ...lieuOrigine, tags: [...(lieuOrigine.tags || [])], photos: [...(lieuOrigine.photos || [])] };
+  const existe = etat.lieux.has(lieu.id);
+  const champs = {};
+  const photosAAjouter = [];
+  const photosARetirer = [];
+  let corpsFeuille;
+
+  const construire = () => {
+    const boite = h('div');
+
+    champs.nom = h('input', {
+      type: 'text', value: lieu.nom || '', placeholder: 'Le nom sur la devanture',
+      autocomplete: 'off', enterkeyhint: 'done',
+    });
+    boite.append(h('div', { class: 'champ' }, h('label', null, 'Nom'), champs.nom));
+
+    champs.type = h('select', null, TYPES_LIEU.map((t) =>
+      h('option', { value: t, selected: lieu.type === t }, t)));
+    boite.append(h('div', { class: 'champ' }, h('label', null, 'Type'), champs.type));
+
+    champs.ville = h('input', { type: 'text', value: lieu.ville || '', list: 'l-villes-2', autocomplete: 'off' });
+    champs.pays = h('input', { type: 'text', value: lieu.pays || '', list: 'l-pays-2', autocomplete: 'off' });
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Ville et pays'),
+      h('div', { class: 'duo' }, champs.ville, champs.pays),
+      h('datalist', { id: 'l-villes-2' }, toutesLesVilles().map((v) => h('option', { value: v }))),
+      h('datalist', { id: 'l-pays-2' }, tousLesPays().map((v) => h('option', { value: v })))));
+
+    champs.adresse = h('input', { type: 'text', value: lieu.adresse || '', autocomplete: 'off' });
+    boite.append(h('div', { class: 'champ' }, h('label', null, 'Adresse'), champs.adresse));
+
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Note'),
+      h('div', { class: 'etoiles-saisie', role: 'group' },
+        [1, 2, 3, 4, 5].map((n) => h('button', {
+          type: 'button', class: (lieu.note >= n ? 'pleine' : ''),
+          'aria-label': n + ' sur 5',
+          onclick: () => { collecter(); lieu.note = (lieu.note === n ? 0 : n); redessiner(); },
+        }, '★')))));
+
+    champs.tags = h('input', {
+      type: 'text', value: (lieu.tags || []).join(', '), autocomplete: 'off',
+      placeholder: 'coup de cœur, à revoir',
+    });
+    boite.append(h('div', { class: 'champ' }, h('label', null, 'Tags'), champs.tags,
+      h('div', { class: 'aide' }, 'Séparés par des virgules.'),
+      h('datalist', { id: 'l-tags' }, tousLesTags().map((t) => h('option', { value: t })))));
+
+    champs.commentaire = h('textarea', { placeholder: 'L’odeur, la lumière, la personne au comptoir…' });
+    champs.commentaire.value = lieu.commentaire || '';
+    boite.append(h('div', { class: 'champ' }, h('label', null, 'Souvenir'), champs.commentaire));
+
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Position'),
+      h('div', { class: 'aide', style: { marginTop: 0 } },
+        isFinite(lieu.latitude)
+          ? lieu.latitude.toFixed(5) + ', ' + lieu.longitude.toFixed(5)
+          : 'Aucune position enregistrée.'),
+      h('button', {
+        type: 'button', class: 'bouton bouton--calme', style: { marginTop: '0.5rem' },
+        onclick: async () => {
+          toast('Recherche de la position…', [], 2500);
+          const p = await demanderPosition({ frais: true });
+          if (!p) return toast("Position indisponible. Vérifiez que la localisation est autorisée — le lieu reste utilisable sans.");
+          collecter();
+          lieu.latitude = p.latitude; lieu.longitude = p.longitude;
+          redessiner();
+          toast('Position mise à jour.');
+        },
+      }, isFinite(lieu.latitude) ? 'Mettre à jour avec ma position' : 'Utiliser ma position')));
+
+    boite.append(h('div', { class: 'champ' },
+      h('span', { class: 'legende' }, 'Photos du lieu'),
+      h('div', { class: 'galerie' },
+        lieu.photos.map((p) => h('button', {
+          type: 'button', 'aria-label': 'Retirer cette photo',
+          onclick: async () => {
+            if (!await confirmer({
+              titre: 'Retirer la photo',
+              message: 'Cette photo sera supprimée définitivement de ce lieu.',
+              labelOk: 'Retirer', danger: true,
+            })) return;
+            lieu.photos = lieu.photos.filter((x) => (x.id || x) !== (p.id || p));
+            photosARetirer.push(p.id || p);
+            redessiner();
+          },
+        }, imgVignette(p, ''))),
+        h('button', {
+          type: 'button', class: 'ajouter',
+          onclick: async () => {
+            const nouvelles = await choisirPhotos();
+            for (const n of nouvelles) { lieu.photos.push(n.reference); photosAAjouter.push(n.enregistrement); }
+            redessiner();
+          },
+        }, '+ photo'))));
+
+    if (existe) {
+      boite.append(h('button', {
+        class: 'bouton bouton--danger', type: 'button',
+        onclick: async () => {
+          const f = feuillesOuvertes[feuillesOuvertes.length - 1];
+          if (!await supprimerLieu(lieuOrigine)) return;
+          // On quitte la fiche d'un lieu qui vient de partir à la corbeille,
+          // une fois la feuille réellement refermée.
+          const surSaFiche = etat.vue.nom === 'lieu' && etat.vue.lieu_id === lieuOrigine.id;
+          if (f) f.fermer(false, surSaFiche ? () => history.back() : null);
+        },
+      }, 'Mettre le lieu à la corbeille'));
+    }
+    return boite;
+  };
+
+  function collecter() {
+    lieu.nom = champs.nom.value.trim();
+    lieu.type = champs.type.value;
+    lieu.ville = champs.ville.value.trim();
+    lieu.pays = champs.pays.value.trim();
+    lieu.adresse = champs.adresse.value.trim();
+    lieu.commentaire = champs.commentaire.value.trim();
+    lieu.tags = champs.tags.value.split(',').map((t) => t.trim()).filter(Boolean);
+  }
+
+  function redessiner() {
+    corpsFeuille.textContent = '';
+    corpsFeuille.append(construire());
+  }
+
+  ouvrirFeuille({
+    titre: existe ? 'Le lieu' : 'Nouveau lieu',
+    labelValider: 'Enregistrer',
+    corps: () => {
+      corpsFeuille = h('div');
+      corpsFeuille.append(construire());
+      if (!nomLieu(lieu)) setTimeout(() => champs.nom.focus(), 80);
+      return corpsFeuille;
+    },
+    valider: async () => {
+      collecter();
+      try {
+        await ecrire(['photos', 'lieux'], (s) => {
+          for (const p of photosAAjouter) { p.parent_id = lieu.id; s.photos.put(p); }
+          for (const id of photosARetirer) s.photos.delete(id);
+          s.lieux.put(lieu);
+        });
+      } catch (err) {
+        toast(messageErreurEcriture(err));
+        return false;
+      }
+      etat.lieux.set(lieu.id, lieu);
+      // Rester cohérent : la ville du dernier lieu nommé devient la ville courante.
+      if (lieu.ville) {
+        const vc = etat.prefs.ville_courante || {};
+        if (vc.ville !== lieu.ville) await ecrirePref('ville_courante', { ville: lieu.ville, pays: lieu.pays });
+      }
+      rendre();
+      return true;
+    },
+  });
+}
+
+/** Choix d'un lieu existant, par distance quand on connaît la position. */
+function choisirLieu(ev, retour) {
+  const ref = etat.lieux.get(ev.lieu_id);
+  const base = (ref && isFinite(ref.latitude)) ? ref : null;
+
+  const liste = lieuxVivants().map((l) => ({
+    lieu: l,
+    d: (base && isFinite(l.latitude))
+      ? distance(base.latitude, base.longitude, l.latitude, l.longitude) : null,
+  })).sort((a, b) => {
+    if (a.d !== null && b.d !== null) return a.d - b.d;
+    if (a.d !== null) return -1;
+    if (b.d !== null) return 1;
+    return (nomLieu(a.lieu) || 'zzz').localeCompare(nomLieu(b.lieu) || 'zzz', 'fr');
+  });
+
+  const appliquer = async (l) => {
+    if (retour) return retour(l);
+    // Appelé depuis le toast : on rattache tout de suite.
+    const maj = { ...ev, lieu_id: l.id };
+    try {
+      await ecrire('evenements', (s) => s.evenements.put(maj));
+      const i = etat.evenements.findIndex((x) => x.id === ev.id);
+      if (i >= 0) etat.evenements[i] = maj;
+      rendre();
+      toast('Rattaché à ' + (nomLieu(l) || 'ce lieu') + '.');
+    } catch (err) { toast(messageErreurEcriture(err)); }
+  };
+
+  const f = ouvrirFeuille({
+    titre: 'Choisir un lieu',
+    corps: () => h('div', null,
+      h('button', {
+        class: 'bouton', onclick: () => f.fermer(false, () => {
+          const l = nouveauLieu(base ? { latitude: base.latitude, longitude: base.longitude } : null);
+          ecrire('lieux', (s) => s.lieux.put(l))
+            .then(() => { etat.lieux.set(l.id, l); return appliquer(l); })
+            .then(() => feuilleLieu(l))
+            .catch((err) => { etat.lieux.delete(l.id); toast(messageErreurEcriture(err)); });
+        }),
+      }, 'Créer un nouveau lieu'),
+      h('div', { style: { margin: '0.9rem -1rem 0' } },
+        liste.map(({ lieu, d }) => h('button', {
+          class: 'rangee',
+          onclick: () => f.fermer(false, () => appliquer(lieu)),
+        },
+          (lieu.photos && lieu.photos[0]) ? imgVignette(lieu.photos[0], 'rangee__miniature') : null,
+          h('div', { class: 'rangee__texte' },
+            h('div', { class: 'rangee__titre' }, nomLieu(lieu) || 'Lieu sans nom'),
+            h('div', { class: 'rangee__sous' }, [lieu.type, lieu.ville].filter(Boolean).join(', '))),
+          h('div', { class: 'rangee__droite' },
+            d === null ? '' : d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'),
+        ))),
+    ),
+  });
+}
+
+/* -------------------------------------------------------- ajout photos ---- */
+
+let resolvePhotos = null;
+
+/** Ouvre la photothèque et renvoie les photos préparées (pas encore écrites). */
+function choisirPhotos() {
+  return new Promise((resoudre) => {
+    resolvePhotos = resoudre;
+    const e = $('#entree-galerie');
+    e.value = '';
+    e.click();
+    // Si l'utilisateur annule le sélecteur, aucun événement n'est émis par le
+    // navigateur : on libère la promesse au retour sur la page.
+    const liberer = () => {
+      setTimeout(() => {
+        if (resolvePhotos === resoudre) { resolvePhotos = null; resoudre([]); }
+      }, 800);
+      window.removeEventListener('focus', liberer);
+    };
+    setTimeout(() => window.addEventListener('focus', liberer), 300);
+  });
+}
+
+$('#entree-galerie').addEventListener('change', async (e) => {
+  const fichiers = [...(e.target.files || [])];
+  e.target.value = '';
+  const suite = resolvePhotos;
+  resolvePhotos = null;
+  if (!suite) return;
+
+  const t = toast('Préparation des photos…', [], 0);
+  const prets = [];
+  for (const f of fichiers) {
+    try { prets.push(await preparerPhoto(f)); }
+    catch (err) { toast('Une photo n’a pas pu être lue, elle a été ignorée.'); }
+  }
+  t.fermer();
+  suite(prets);
+});
+
+/** Ajout direct de photos à un lieu, depuis sa fiche. */
+async function ajouterPhotosA(type, id) {
+  const nouvelles = await choisirPhotos();
+  if (!nouvelles.length) return;
+  const cible = etat.lieux.get(id);
+  if (!cible) return;
+  const maj = { ...cible, photos: [...(cible.photos || []), ...nouvelles.map((n) => n.reference)] };
+  try {
+    await ecrire(['photos', 'lieux'], (s) => {
+      for (const n of nouvelles) { n.enregistrement.parent_id = id; s.photos.put(n.enregistrement); }
+      s.lieux.put(maj);
+    });
+    etat.lieux.set(id, maj);
+    rendre();
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+/* ==========================================================================
+   SUPPRESSION — confirmation explicite, puis corbeille de 30 jours
+   ========================================================================== */
+
+async function supprimerEvenement(ev) {
+  const ok = await confirmer({
+    titre: 'Supprimer cette entrée',
+    message: 'Elle part à la corbeille et y reste ' + JOURS_CORBEILLE
+      + ' jours. Vous pourrez la récupérer d’ici là.',
+    labelOk: 'Mettre à la corbeille', danger: true,
+  });
+  if (!ok) return false;
+  const maj = { ...ev, supprime_le: new Date().toISOString() };
+  try {
+    await ecrire('evenements', (s) => s.evenements.put(maj));
+    const i = etat.evenements.findIndex((x) => x.id === ev.id);
+    if (i >= 0) etat.evenements[i] = maj;
+    animerRature(ev.id);
+    setTimeout(rendre, 180);
+    return true;
+  } catch (err) { toast(messageErreurEcriture(err)); return false; }
+}
+
+async function supprimerLieu(lieu) {
+  const lies = etat.evenements.filter((e) => e.lieu_id === lieu.id && !e.supprime_le);
+  const ok = await confirmer({
+    titre: 'Supprimer ce lieu',
+    message: lies.length
+      ? 'Ce lieu et ses ' + lies.length + ' entrées partent ensemble à la corbeille, pour '
+        + JOURS_CORBEILLE + ' jours. Les restaurer les ramènera tous.'
+      : 'Ce lieu part à la corbeille et y reste ' + JOURS_CORBEILLE + ' jours.',
+    labelOk: 'Mettre à la corbeille', danger: true,
+  });
+  if (!ok) return false;
+
+  const quand = new Date().toISOString();
+  const majLieu = { ...lieu, supprime_le: quand };
+  // `supprime_avec` marque les entrées entraînées par le lieu : elles ne
+  // s'affichent pas séparément dans la corbeille et reviennent avec lui.
+  const majEvs = lies.map((e) => ({ ...e, supprime_le: quand, supprime_avec: lieu.id }));
+  try {
+    await ecrire(['lieux', 'evenements'], (s) => {
+      s.lieux.put(majLieu);
+      for (const e of majEvs) s.evenements.put(e);
+    });
+    etat.lieux.set(lieu.id, majLieu);
+    for (const e of majEvs) {
+      const i = etat.evenements.findIndex((x) => x.id === e.id);
+      if (i >= 0) etat.evenements[i] = e;
+    }
+    rendre();
+    return true;
+  } catch (err) { toast(messageErreurEcriture(err)); return false; }
+}
+
+async function restaurerEvenement(ev) {
+  const maj = { ...ev, supprime_le: null, supprime_avec: null };
+  try {
+    await ecrire('evenements', (s) => s.evenements.put(maj));
+    const i = etat.evenements.findIndex((x) => x.id === ev.id);
+    if (i >= 0) etat.evenements[i] = maj;
+    rendre();
+    toast('Restaurée.');
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+async function restaurerLieu(lieu) {
+  const lies = etat.evenements.filter((e) => e.supprime_avec === lieu.id);
+  const majLieu = { ...lieu, supprime_le: null };
+  const majEvs = lies.map((e) => ({ ...e, supprime_le: null, supprime_avec: null }));
+  try {
+    await ecrire(['lieux', 'evenements'], (s) => {
+      s.lieux.put(majLieu);
+      for (const e of majEvs) s.evenements.put(e);
+    });
+    etat.lieux.set(lieu.id, majLieu);
+    for (const e of majEvs) {
+      const i = etat.evenements.findIndex((x) => x.id === e.id);
+      if (i >= 0) etat.evenements[i] = e;
+    }
+    rendre();
+    toast('Restauré' + (lies.length ? ' avec ses ' + lies.length + ' entrées.' : '.'));
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+async function detruireEvenement(ev) {
+  const ok = await confirmer({
+    titre: 'Supprimer pour de bon',
+    message: 'Cette entrée et ses photos seront effacées définitivement. C’est sans retour.',
+    labelOk: 'Effacer définitivement', danger: true,
+  });
+  if (!ok) return;
+  try {
+    await ecrire(['photos', 'evenements'], (s) => {
+      for (const p of ev.photos || []) s.photos.delete(p.id || p);
+      s.evenements.delete(ev.id);
+    });
+    etat.evenements = etat.evenements.filter((x) => x.id !== ev.id);
+    rendre();
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+async function detruireLieu(lieu) {
+  const lies = etat.evenements.filter((e) => e.lieu_id === lieu.id);
+  const ok = await confirmer({
+    titre: 'Supprimer pour de bon',
+    message: 'Ce lieu' + (lies.length ? ', ses ' + lies.length + ' entrées' : '')
+      + ' et toutes leurs photos seront effacés définitivement. C’est sans retour.',
+    labelOk: 'Effacer définitivement', danger: true,
+  });
+  if (!ok) return;
+  try {
+    await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+      for (const p of lieu.photos || []) s.photos.delete(p.id || p);
+      for (const e of lies) {
+        for (const p of e.photos || []) s.photos.delete(p.id || p);
+        s.evenements.delete(e.id);
+      }
+      s.lieux.delete(lieu.id);
+    });
+    etat.lieux.delete(lieu.id);
+    etat.evenements = etat.evenements.filter((e) => e.lieu_id !== lieu.id);
+    rendre();
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+function animerRature(id) {
+  const el = document.querySelector('.ligne[data-id="' + CSS.escape(id) + '"]');
+  if (el) el.classList.add('ligne--rature');
+}
+
+/** Purge silencieuse au démarrage de ce qui a dépassé les 30 jours. */
+async function purgerCorbeille() {
+  const limite = new Date(Date.now() - JOURS_CORBEILLE * 86400000).toISOString();
+  const lieux = [...etat.lieux.values()].filter((l) => l.supprime_le && l.supprime_le < limite);
+  const evs = etat.evenements.filter((e) => e.supprime_le && e.supprime_le < limite);
+  if (!lieux.length && !evs.length) return;
+
+  await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+    for (const e of evs) {
+      for (const p of e.photos || []) s.photos.delete(p.id || p);
+      s.evenements.delete(e.id);
+    }
+    for (const l of lieux) {
+      for (const p of l.photos || []) s.photos.delete(p.id || p);
+      s.lieux.delete(l.id);
+    }
+  });
+  for (const e of evs) etat.evenements = etat.evenements.filter((x) => x.id !== e.id);
+  for (const l of lieux) etat.lieux.delete(l.id);
+}
+
+/* ==========================================================================
+   TOASTS
+   ========================================================================== */
+
+function toast(message, actions = [], duree = 4200) {
+  const el = h('div', { class: 'toast', role: 'status' },
+    h('div', { class: 'toast__texte' }, message),
+    actions.map((a) => h('button', {
+      onclick: () => { fermer(); a.action(); },
+    }, a.label)),
+  );
+  let minuteur = null;
+  const fermer = () => { clearTimeout(minuteur); el.remove(); };
+  $('#toasts').append(el);
+  if (duree > 0) minuteur = setTimeout(fermer, duree);
+  return { fermer, el };
+}
+
+/* ==========================================================================
+   NAVIGATION
+   ========================================================================== */
+
+function naviguer(vue) {
+  etat.vue = vue;
+  history.pushState({ vue }, '');
+  window.scrollTo(0, 0);
+  rendre();
+}
+
+window.addEventListener('popstate', (e) => {
+  if (popsAIgnorer > 0) {
+    popsAIgnorer--;
+    if (popsAIgnorer === 0) viderApresPops();
+    return;
+  }
+  if (feuillesOuvertes.length) {
+    feuillesOuvertes[feuillesOuvertes.length - 1].fermer(true);
+    return;
+  }
+  etat.vue = (e.state && e.state.vue) || { nom: 'journal' };
+  rendre();
+});
+
+/* ==========================================================================
+   REPRISE APRÈS VEILLE
+
+   Au retour dans l'app après plusieurs heures, deux choses peuvent avoir
+   changé : le jour, et la connexion à la base (iOS la ferme parfois). On
+   recharge sans rien demander.
+   ========================================================================== */
+
+let jourAffiche = isoLocal();
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible') return;
+  const changementDeJour = jourAffiche !== isoLocal();
+  const longueAbsence = Date.now() - dernierRendu > 5 * 60 * 1000;
+  if (!changementDeJour && !longueAbsence) return;
+  try {
+    await chargerEtat();
+    jourAffiche = isoLocal();
+    rendre();
+  } catch (err) {
+    toast("La base s'est fermée pendant la veille. Rechargez la page pour la rouvrir.");
+  }
+});
+
+/* ==========================================================================
+   MISE À JOUR DE L'APP
+   ========================================================================== */
+
+async function chercherMiseAJour() {
+  if (!('serviceWorker' in navigator)) return toast('Pas de mise à jour possible dans ce contexte.');
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) return toast('L’app n’est pas installée hors ligne ici.');
+  toast('Recherche…', [], 2000);
+  try {
+    await reg.update();
+    if (reg.waiting) {
+      reg.waiting.postMessage('activer-maintenant');
+      toast('Nouvelle version prête.', [{ label: 'Recharger', action: () => location.reload() }], 9000);
+    } else {
+      toast('Vous avez déjà la dernière version.');
+    }
+  } catch (_) {
+    toast('Pas de réseau : impossible de vérifier. L’app fonctionne quand même.');
+  }
+}
+
+/* ==========================================================================
+   DÉMARRAGE
+   ========================================================================== */
+
+function ecranBloquant(titre, paragraphes) {
+  $('#entete').hidden = true;
+  $('#barre').hidden = true;
+  $('#vue').textContent = '';
+  $('#vue').append(h('div', { class: 'bloquant' },
+    h('h1', null, titre),
+    paragraphes.map((p) => h('p', null, p)),
+  ));
+}
+
+async function demarrer() {
+  try {
+    await ouvrirBase();
+  } catch (err) {
+    // Navigation privée, stockage désactivé, ou fichier ouvert en file:// —
+    // dans tous les cas on explique ce qui se passe et quoi faire.
+    const enFichier = location.protocol === 'file:';
+    ecranBloquant('Le carnet ne peut pas s’ouvrir ici.', enFichier ? [
+      "Ce fichier est ouvert directement depuis le disque (file://). Dans ce mode, les navigateurs interdisent le stockage local : rien de ce que vous saisiriez ne serait conservé.",
+      "Servez le dossier par HTTP — par exemple avec « python -m http.server » dans ce répertoire, puis ouvrez l’adresse indiquée — ou déposez ces fichiers sur GitHub Pages et installez l’app sur l’écran d’accueil.",
+    ] : [
+      "Le navigateur refuse l’accès à son stockage local. C’est le cas en navigation privée, ou lorsque les données de site sont bloquées dans les réglages.",
+      "Ouvrez cette page dans une fenêtre normale, ou autorisez le stockage pour ce site. Aucune donnée n’a été perdue : elle n’a simplement pas pu être lue.",
+    ]);
+    console.error(err);
+    return;
+  }
+
+  await chargerEtat();
+  await purgerCorbeille().catch(() => {});
+
+  history.replaceState({ vue: etat.vue }, '');
+  rendre();
+
+  // Demander la persistance évite que le navigateur efface le carnet quand il
+  // manque de place. Sans réponse positive, l'app reste parfaitement utilisable.
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persisted().then((deja) => { if (!deja) navigator.storage.persist(); }).catch(() => {});
+  }
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {
+      /* pas de service worker : l'app fonctionne, sans le mode avion complet */
+    });
+  }
+
+  // Première ouverture : on demande où on est, c'est ce qui alimente tout le reste.
+  if (!etat.prefs.ville_courante && !etat.evenements.length) {
+    setTimeout(feuilleVille, 500);
+  }
+}
+
+demarrer();
+</script>
+</body>
+</html>
