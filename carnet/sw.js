@@ -11,7 +11,9 @@
 */
 
 // Incrémenter cette version publie une mise à jour de l'app.
-const VERSION = 'carnet-v3';
+// À garder identique à VERSION_APP dans voyage.html : c'est la comparaison
+// des deux qui permet de dire honnêtement « une nouvelle version est prête ».
+const VERSION = 'carnet-v4';
 
 const FICHIERS = [
   './voyage.html',
@@ -26,7 +28,10 @@ self.addEventListener('install', (e) => {
     caches.open(VERSION)
       // Chaque fichier est ajouté individuellement : un 404 sur une icône ne doit
       // pas faire échouer l'installation complète de l'app.
-      .then((cache) => Promise.all(FICHIERS.map((f) => cache.add(f).catch(() => null))))
+      // `cache: 'reload'` court-circuite le cache HTTP du navigateur : sans lui,
+      // une nouvelle version pourrait s'installer avec l'ancien HTML.
+      .then((cache) => Promise.all(FICHIERS.map(
+        (f) => cache.add(new Request(f, { cache: 'reload' })).catch(() => null))))
       .then(() => self.skipWaiting())
   );
 });
@@ -73,7 +78,11 @@ self.addEventListener('fetch', (e) => {
   );
 });
 
-// La page peut demander l'activation immédiate d'une nouvelle version.
 self.addEventListener('message', (e) => {
+  // La page peut demander l'activation immédiate d'une nouvelle version.
   if (e.data === 'activer-maintenant') self.skipWaiting();
+
+  // Et elle peut demander quelle version est réellement aux commandes : c'est
+  // le seul moyen fiable de savoir si le code affiché est périmé.
+  if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage(VERSION);
 });

@@ -1997,15 +1997,29 @@ function vueReglages() {
       }, 'Ouvrir la corbeille')),
 
     h('div', { class: 'sous-titre' }, 'Application'),
-    h('p', { class: 'note-info', style: { margin: '0 1rem' } },
-      'Phase 1 — saisie et consultation. ',
+    h('p', { id: 'zone-version', class: 'note-info', style: { margin: '0 1rem' } },
+      'Version ' + VERSION_APP + '. ',
       navigator.onLine ? 'En ligne.' : 'Hors ligne : tout fonctionne quand même.'),
     h('div', { style: { padding: '0.9rem 1rem' } },
       h('button', { class: 'bouton bouton--calme', onclick: chercherMiseAJour }, 'Chercher une mise à jour')),
   );
 
   decrireStockage();
+  decrireVersion();
   return frag;
+}
+
+/** Affiche noir sur blanc si le code affiché est en retard sur le cache. */
+async function decrireVersion() {
+  const v = await versionDuServiceWorker();
+  const zone = $('#zone-version');
+  if (!zone || !v) return;
+  if (v === VERSION_APP) return;
+  zone.textContent = '';
+  zone.append(
+    'Cette page fait tourner ' + VERSION_APP + ', mais ' + v
+    + ' est déjà installée. Rechargez pour l’utiliser.',
+  );
 }
 
 function arrondiLisible(v) {
@@ -3458,27 +3472,100 @@ document.addEventListener('visibilitychange', async () => {
   } catch (err) {
     toast("La base s'est fermée pendant la veille. Rechargez la page pour la rouvrir.");
   }
+  // Une mise à jour a pu s'installer pendant que l'app dormait en arrière-plan.
+  if (await pageEstPerimee()) proposerRechargement('Une version plus récente est installée.');
 });
 
 /* ==========================================================================
    MISE À JOUR DE L'APP
    ========================================================================== */
 
+/**
+ * Version du code effectivement en train de tourner dans cette page.
+ * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
+ * dit la vérité sur l'état de l'app.
+ */
+const VERSION_APP = 'carnet-v4';
+
+/**
+ * Demande au service worker aux commandes quelle version il sert.
+ * Passer par un canal de message est le seul moyen fiable : un `fetch` de
+ * sw.js repasserait par le cache de ce même service worker et renverrait
+ * l'ancienne version.
+ */
+function versionDuServiceWorker() {
+  return new Promise((resoudre) => {
+    const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (!sw) return resoudre(null);
+    const canal = new MessageChannel();
+    const minuteur = setTimeout(() => resoudre(null), 1500);
+    canal.port1.onmessage = (e) => { clearTimeout(minuteur); resoudre(e.data); };
+    try { sw.postMessage('version', [canal.port2]); }
+    catch (_) { clearTimeout(minuteur); resoudre(null); }
+  });
+}
+
+/** Le code affiché est-il en retard sur ce que le service worker sert ? */
+async function pageEstPerimee() {
+  const v = await versionDuServiceWorker();
+  return !!v && v !== VERSION_APP;
+}
+
+function proposerRechargement(message) {
+  toast(message, [{ label: 'Recharger', action: () => location.reload() }], 12000);
+}
+
 async function chercherMiseAJour() {
   if (!('serviceWorker' in navigator)) return toast('Pas de mise à jour possible dans ce contexte.');
   const reg = await navigator.serviceWorker.getRegistration();
   if (!reg) return toast('L’app n’est pas installée hors ligne ici.');
-  toast('Recherche…', [], 2000);
+
+  // Le code déjà chargé peut être en retard même sans nouvelle publication :
+  // le service worker a pu se mettre à jour tout seul pendant que la page
+  // restait ouverte. On le vérifie avant même d'interroger le réseau.
+  if (await pageEstPerimee()) {
+    return proposerRechargement('Une version plus récente est déjà installée.');
+  }
+
+  const t = toast('Recherche…', [], 0);
+
+  /*
+    `reg.update()` rend la main dès que la vérification réseau est faite, pas
+    quand le nouveau worker est prêt. Et comme l'installation appelle
+    skipWaiting(), le nouveau worker ne passe jamais par l'état « waiting » :
+    il prend directement les commandes. On écoute donc les deux signaux qui
+    arrivent vraiment — une installation qui démarre, ou un changement de
+    contrôleur — plutôt que de tester un état qui restera toujours vide.
+  */
+  const nouvelleVersion = new Promise((resoudre) => {
+    let fait = false;
+    const signaler = () => { if (!fait) { fait = true; resoudre(true); } };
+
+    navigator.serviceWorker.addEventListener('controllerchange', signaler, { once: true });
+    reg.addEventListener('updatefound', () => {
+      const arrivant = reg.installing;
+      if (!arrivant) return signaler();
+      arrivant.addEventListener('statechange', () => {
+        if (['installed', 'activating', 'activated'].includes(arrivant.state)) signaler();
+      });
+    }, { once: true });
+  });
+
   try {
     await reg.update();
-    if (reg.waiting) {
-      reg.waiting.postMessage('activer-maintenant');
-      toast('Nouvelle version prête.', [{ label: 'Recharger', action: () => location.reload() }], 9000);
-    } else {
-      toast('Vous avez déjà la dernière version.');
-    }
   } catch (_) {
-    toast('Pas de réseau : impossible de vérifier. L’app fonctionne quand même.');
+    t.fermer();
+    return toast('Pas de réseau : impossible de vérifier. L’app fonctionne quand même.');
+  }
+
+  const trouvee = await Promise.race([nouvelleVersion, delai(8000).then(() => false)]);
+  t.fermer();
+
+  if (trouvee || reg.waiting || reg.installing) {
+    if (reg.waiting) reg.waiting.postMessage('activer-maintenant');
+    proposerRechargement('Nouvelle version prête.');
+  } else {
+    toast('Vous avez déjà la dernière version.');
   }
 }
 
@@ -3527,8 +3614,16 @@ async function demarrer() {
   }
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    // Mémorisé avant l'enregistrement : sur une toute première installation,
+    // la prise de contrôle est normale et ne mérite aucun message.
+    const dejaControlee = !!navigator.serviceWorker.controller;
+
     navigator.serviceWorker.register('sw.js').catch(() => {
       /* pas de service worker : l'app fonctionne, sans le mode avion complet */
+    });
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (dejaControlee) proposerRechargement('Nouvelle version installée.');
     });
   }
 
