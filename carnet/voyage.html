@@ -357,6 +357,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .jauge__fill { height: 100%; background: var(--bille); border-radius: 4px; }
 
+/* Le ticket photographié, affiché assez grand pour que la reconnaissance de
+   texte du système puisse s'y accrocher. Pas de bouton autour : l'appui long
+   doit atteindre l'image, pas un gestionnaire de clic. */
+.ticket__apercu { margin: 0.9rem 0; }
+.ticket__image {
+  display: block; width: 100%; max-height: 52vh;
+  object-fit: contain; border-radius: 10px; background: var(--reglure);
+}
+
 .part__idees { margin-top: 0.4rem; }
 .idee {
   display: flex; width: 100%; gap: 0.8rem; align-items: baseline;
@@ -707,7 +716,7 @@ function nombre(v) {
 }
 
 function formatMontant(valeur, devise) {
-  if (!isFinite(valeur)) return '';
+  if (!Number.isFinite(valeur)) return '';
   try {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency', currency: devise || 'EUR',
@@ -722,12 +731,12 @@ const formatEuros = (v) => formatMontant(v, 'EUR');
 
 /** Conversion à l'affichage uniquement. Le montant en base n'est jamais réécrit. */
 function enEuros(ev) {
-  if (!ev || !isFinite(ev.montant)) return 0;
+  if (!ev || !Number.isFinite(ev.montant)) return 0;
   if (ev.devise === 'EUR') return ev.montant;
   const taux = Number(ev.taux_vers_eur);
-  return isFinite(taux) && taux > 0 ? ev.montant * taux : 0;
+  return Number.isFinite(taux) && taux > 0 ? ev.montant * taux : 0;
 }
-const aUnMontant = (ev) => isFinite(ev.montant) && ev.montant !== null && ev.montant !== 0;
+const aUnMontant = (ev) => Number.isFinite(ev.montant) && ev.montant !== null && ev.montant !== 0;
 
 /**
  * Une idée d'achat porte un montant estimé, mais cet argent n'est pas sorti.
@@ -1868,7 +1877,7 @@ function feuilleBudget() {
     },
     valider: async () => {
       const m = nombre(champMontant.value);
-      if (!isFinite(m) || m <= 0) { toast('Indiquez un montant supérieur à zéro.'); return false; }
+      if (!Number.isFinite(m) || m <= 0) { toast('Indiquez un montant supérieur à zéro.'); return false; }
       if (champFin.value && champFin.value < champDebut.value) {
         toast('La date de fin tombe avant le début.');
         return false;
@@ -1952,15 +1961,31 @@ function analyserTicket(texte) {
   const nombresDe = (s) => (sansDatesNiHeures(s).match(MOTIF_NOMBRE) || []);
   const MOTS_TOTAL = /(total|montant|somme|à\s*payer|a\s*payer|net\s*à|ttc|合\s*計|総\s*計|합\s*계|amount|sum)/i;
 
+  const lignes = texte.split(/[\n\r]+/);
+
+  // L'enseigne est presque toujours en tête de ticket : la première ligne qui
+  // ressemble à un nom plutôt qu'à une date, un numéro ou une mention légale.
+  const enseigne = (() => {
+    const BRUIT = /^(ticket|facture|re[çc]u|caisse|tel|t[ée]l|siret|siren|tva|vat|merci|thank|www\.|http|n°|no\.|date|heure|adresse)/i;
+    for (const l of lignes.slice(0, 4)) {
+      const net = l.trim().replace(/\s{2,}/g, ' ');
+      if (net.length < 2 || net.length > 40) continue;
+      if (BRUIT.test(net)) continue;
+      if (!/\p{L}{2,}/u.test(net)) continue;          // il faut de vraies lettres
+      if (/^[\d\s/:.-]+$/.test(net)) continue;        // une date, une heure
+      return net;
+    }
+    return '';
+  })();
+
   // 1) La ligne qui annonce un total, en partant de la fin : sur un ticket,
   //    le vrai total est le dernier (« Total HT » précède « Total TTC »).
-  const lignes = texte.split(/[\n\r]+/);
   for (let l = lignes.length - 1; l >= 0; l--) {
     if (!MOTS_TOTAL.test(lignes[l])) continue;
     const n = nombresDe(lignes[l]);
     for (let i = n.length - 1; i >= 0; i--) {
       const v = lireNombreLibre(n[i]);
-      if (isFinite(v) && v > 0) return { montant: v, devise, sur: 'un total' };
+      if (Number.isFinite(v) && v > 0) return { montant: v, devise, enseigne, sur: 'un total' };
     }
   }
 
@@ -1968,54 +1993,377 @@ function analyserTicket(texte) {
   let max = null;
   for (const s of lignes.flatMap(nombresDe)) {
     const v = lireNombreLibre(s);
-    if (isFinite(v) && v > 0 && v < 1e9 && (max === null || v > max)) max = v;
+    if (Number.isFinite(v) && v > 0 && v < 1e9 && (max === null || v > max)) max = v;
   }
-  return max === null ? null : { montant: max, devise, sur: 'le plus gros montant' };
+  return max === null ? null : { montant: max, devise, enseigne, sur: 'le plus gros montant' };
 }
 
 /**
  * Bouton « Coller » : lit le presse-papier, sinon ouvre un champ où déposer
  * le texte à la main (certains navigateurs refusent la lecture directe).
  */
-function boutonCollerTicket(appliquer) {
+function boutonLireTicket(appliquer, lieuDuTicket, ajouterPhoto) {
   const traiter = (texte) => {
     const trouve = analyserTicket(texte);
     if (!trouve) { toast('Aucun montant reconnu dans ce texte.'); return false; }
     appliquer(trouve);
-    toast('Montant repris depuis ' + trouve.sur + '. Vérifiez-le.');
+
+    // L'enseigne lue en tête de ticket nomme le lieu, s'il n'a pas de nom.
+    const lieu = etat.lieux.get(lieuDuTicket);
+    const actions = [];
+    if (trouve.enseigne && lieu && !nomLieu(lieu)) {
+      actions.push({
+        label: 'Nommer « ' + trouve.enseigne + ' »',
+        action: async () => {
+          const maj = { ...lieu, nom: trouve.enseigne };
+          try {
+            await ecrire('lieux', (s) => s.lieux.put(maj));
+            etat.lieux.set(lieu.id, maj);
+            rendre();
+            toast('Lieu nommé.');
+          } catch (err) { toast(messageErreurEcriture(err)); }
+        },
+      });
+    }
+    toast('Montant repris depuis ' + trouve.sur + '. Vérifiez-le.', actions, actions.length ? 9000 : 4200);
     return true;
   };
 
   return h('button', {
     type: 'button', class: 'bouton bouton--calme', style: { marginTop: '0.5rem' },
-    onclick: async () => {
-      let texte = null;
-      try {
-        if (navigator.clipboard && navigator.clipboard.readText) {
-          texte = await navigator.clipboard.readText();
+    onclick: () => feuilleTicket(traiter, ajouterPhoto),
+  }, 'Lire un ticket');
+}
+
+/**
+ * Le parcours complet, en un seul écran : photographier le ticket, le voir en
+ * grand, y sélectionner le total, coller.
+ *
+ * Le téléphone fait la reconnaissance de texte lui-même — Live Text sur iOS,
+ * Lens sur Android — directement sur l'image affichée ici. L'app n'embarque
+ * aucun moteur d'OCR : elle se contente de récupérer ce que vous avez copié.
+ */
+function feuilleTicket(traiter, ajouterPhoto) {
+  let apercu, zone, urlApercu = null;
+
+  const nettoyer = () => { if (urlApercu) URL.revokeObjectURL(urlApercu); urlApercu = null; };
+
+  const photographier = () => {
+    const entree = h('input', {
+      type: 'file', accept: 'image/*', capture: 'environment', hidden: true,
+      onchange: async (e) => {
+        const fichier = e.target.files && e.target.files[0];
+        entree.remove();
+        if (!fichier) return;
+
+        const t = toast('Traitement de la photo…', [], 0);
+        try {
+          const prete = await preparerPhoto(fichier);
+          t.fermer();
+
+          nettoyer();
+          urlApercu = URL.createObjectURL(prete.enregistrement.blob);
+          apercu.textContent = '';
+          apercu.append(
+            // Une <img> nue, sans bouton autour : c'est ce qui permet à l'appui
+            // long du système d'attraper le texte plutôt qu'un clic.
+            h('img', { src: urlApercu, alt: 'Ticket photographié', class: 'ticket__image' }),
+            h('p', { class: 'aide', style: { marginTop: '0.5rem' } },
+              'Appui long sur le total dans l’image, puis « Copier ». Ensuite, le bouton ci-dessous.'),
+          );
+
+          if (ajouterPhoto) ajouterPhoto(prete);
+        } catch (err) {
+          t.fermer();
+          toast(err && err.message === 'image-illisible'
+            ? 'Cette photo n’a pas pu être lue. Réessayez.'
+            : 'Le traitement de la photo a échoué.');
         }
-      } catch (_) { /* refus ou navigateur récalcitrant : on passe au champ manuel */ }
+      },
+    });
+    document.body.append(entree);
+    entree.click();
+  };
 
-      if (texte && traiter(texte)) return;
+  const collerEtLire = async (f) => {
+    let texte = null;
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        texte = await navigator.clipboard.readText();
+      }
+    } catch (_) { /* refus du navigateur : on retombe sur le champ manuel */ }
 
-      let zone;
-      ouvrirFeuille({
-        titre: 'Coller le ticket',
-        labelValider: 'Lire le montant',
-        corps: () => {
-          zone = h('textarea', { placeholder: 'Collez ici le texte du ticket…' });
-          if (texte) zone.value = texte;
-          setTimeout(() => zone.focus(), 60);
-          return h('div', null,
-            h('p', { class: 'note-info', style: { marginTop: 0 } },
-              'Sur la photo du ticket, sélectionnez le total avec la reconnaissance de texte du téléphone '
-              + '(appui long sur iOS, Lens sur Android), copiez, puis collez ici.'),
-            h('div', { class: 'champ' }, zone));
-        },
-        valider: () => (traiter(zone.value) ? true : false),
+    if (texte && texte.trim()) {
+      if (traiter(texte)) { nettoyer(); f.fermer(); return; }
+      zone.value = texte;
+      toast('Rien de reconnu. Corrigez le texte ci-dessous, puis relancez.');
+      return;
+    }
+    toast('Presse-papier vide. Sélectionnez le total sur la photo et copiez-le.');
+    setTimeout(() => zone.focus(), 60);
+  };
+
+  ouvrirFeuille({
+    titre: 'Lire un ticket',
+    corps: (f) => {
+      apercu = h('div', { class: 'ticket__apercu' },
+        h('p', { class: 'note-info', style: { margin: 0 } },
+          'Photographiez le ticket : il s’affichera ici, et vous pourrez y sélectionner le total.'));
+      zone = h('textarea', {
+        placeholder: 'Ou collez ici le texte du ticket…',
+        style: { minHeight: '4.5rem', fontSize: '0.85rem' },
       });
+
+      return h('div', null,
+        h('button', { type: 'button', class: 'bouton', onclick: photographier },
+          'Photographier le ticket'),
+        apercu,
+        h('button', { type: 'button', class: 'bouton', onclick: () => collerEtLire(f) },
+          'Coller le total copié'),
+        h('div', { class: 'champ', style: { marginTop: '1.2rem' } },
+          h('label', null, 'Si le collage ne marche pas'), zone,
+          h('button', {
+            type: 'button', class: 'bouton bouton--calme',
+            onclick: () => { if (traiter(zone.value)) { nettoyer(); f.fermer(); } },
+          }, 'Lire ce texte')),
+        h('p', { class: 'note-info' },
+          'La photo prise ici est ajoutée à l’entrée : votre ticket reste avec la dépense.'),
+      );
     },
-  }, 'Coller un ticket');
+  });
+}
+
+/* ==========================================================================
+   ENRICHISSEMENT EN LIGNE (optionnel)
+
+   Traduire une position en nom de rue demande d'interroger un service tiers :
+   c'est impossible hors ligne, et cela revient à confier ses coordonnées à
+   quelqu'un d'autre. C'est donc entièrement optionnel, soumis à un accord
+   explicite, et strictement additif : sans réseau, sans accord, ou en cas de
+   panne du service, l'app se comporte exactement comme si ce code n'existait
+   pas — aucune attente, aucune erreur, aucun champ vidé.
+
+   Rien de ce qui est trouvé n'écrase jamais ce que vous avez écrit.
+   ========================================================================== */
+
+const CACHE_GEO = new Map();
+const cleGeo = (lat, lon) => lat.toFixed(4) + ',' + lon.toFixed(4);   // ~11 m
+
+let dernierAppelReseau = 0;
+
+/** Nominatim demande au maximum une requête par seconde. On la respecte. */
+async function respecterCadence() {
+  const attente = 1100 - (Date.now() - dernierAppelReseau);
+  if (attente > 0) await delai(attente);
+  dernierAppelReseau = Date.now();
+}
+
+async function recuperer(url, options = {}) {
+  const stop = new AbortController();
+  const minuteur = setTimeout(() => stop.abort(), options.limite || 9000);
+  try {
+    const r = await fetch(url, { ...options, signal: stop.signal });
+    if (!r.ok) throw new Error('http-' + r.status);
+    return await r.json();
+  } finally { clearTimeout(minuteur); }
+}
+
+/** L'accord n'est demandé qu'une fois, et reste révocable dans les réglages. */
+function autoriserReseau() {
+  if (etat.prefs.enrichissement === true) return Promise.resolve(true);
+  if (etat.prefs.enrichissement === false) return Promise.resolve(false);
+
+  return new Promise((resoudre) => {
+    let decide = false;
+    const f = ouvrirFeuille({
+      titre: 'Compléter depuis Internet',
+      corps: () => h('div', null,
+        h('p', { style: { marginTop: 0, fontFamily: 'var(--police-texte)', fontSize: '1.02rem' } },
+          'Pour retrouver la ville, la rue et les commerces autour de vous, l’app doit envoyer '
+          + 'vos coordonnées à OpenStreetMap, un service public et gratuit.'),
+        h('p', { class: 'note-info' },
+          'Rien d’autre ne part : ni vos photos, ni vos montants, ni vos notes. '
+          + 'Vous pouvez revenir sur ce choix à tout moment dans les réglages, et le carnet '
+          + 'reste entièrement utilisable sans.'),
+        h('button', {
+          class: 'bouton',
+          onclick: async () => { decide = true; await ecrirePref('enrichissement', true); f.fermer(); resoudre(true); },
+        }, 'Autoriser'),
+        h('button', {
+          class: 'bouton bouton--calme',
+          onclick: async () => { decide = true; await ecrirePref('enrichissement', false); f.fermer(); resoudre(false); },
+        }, 'Non merci'),
+      ),
+    });
+    const veille = setInterval(() => {
+      if (f.ferme) { clearInterval(veille); if (!decide) resoudre(false); }
+    }, 120);
+  });
+}
+
+const reseauUtilisable = () => etat.prefs.enrichissement === true && navigator.onLine !== false;
+
+/**
+ * Géocodage inverse : une position devient une ville, un pays, une rue.
+ * Renvoie null en cas d'échec — jamais d'exception qui remonte à l'interface.
+ */
+async function geocoderInverse(lat, lon) {
+  const cle = cleGeo(lat, lon);
+  if (CACHE_GEO.has(cle)) return CACHE_GEO.get(cle);
+  try {
+    await respecterCadence();
+    const d = await recuperer('https://nominatim.openstreetmap.org/reverse'
+      + '?format=jsonv2&zoom=18&addressdetails=1&accept-language=fr'
+      + '&lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon));
+
+    const a = d.address || {};
+    const resultat = {
+      ville: a.city || a.town || a.village || a.municipality || a.suburb || a.county || '',
+      pays: a.country || '',
+      adresse: [
+        [a.house_number, a.road].filter(Boolean).join(' '),
+        a.neighbourhood || a.suburb || '',
+        a.postcode || '',
+      ].filter(Boolean).join(', '),
+      nom: d.name || '',
+    };
+    CACHE_GEO.set(cle, resultat);
+    return resultat;
+  } catch (_) {
+    return null;      // hors ligne, service muet, requête trop lente : on n'insiste pas
+  }
+}
+
+/** Traduit les étiquettes OpenStreetMap vers les six types du carnet. */
+function typeDepuisTags(t = {}) {
+  if (t.shop) return 'boutique';
+  if (['restaurant', 'cafe', 'fast_food', 'bar', 'pub', 'ice_cream', 'food_court'].includes(t.amenity)) return 'restaurant';
+  if (['hotel', 'hostel', 'guest_house', 'motel', 'apartment', 'chalet'].includes(t.tourism)) return 'hébergement';
+  if (['museum', 'attraction', 'gallery', 'artwork', 'viewpoint', 'zoo', 'theme_park'].includes(t.tourism)) return 'activité';
+  if (t.historic || t.leisure) return 'activité';
+  if (['bus_station', 'ferry_terminal', 'taxi', 'car_rental'].includes(t.amenity)) return 'transport';
+  if (t.public_transport || t.railway || t.aeroway) return 'transport';
+  if (t.amenity) return 'activité';
+  return 'autre';
+}
+
+/** Les commerces et curiosités nommés autour d'un point, du plus proche au plus loin. */
+async function lieuxAlentour(lat, lon, rayon = 70) {
+  const requete = '[out:json][timeout:12];('
+    + ['shop', 'amenity', 'tourism', 'leisure', 'historic']
+      .map((c) => 'nwr(around:' + rayon + ',' + lat + ',' + lon + ')[name][' + c + '];').join('')
+    + ');out center 40;';
+  try {
+    await respecterCadence();
+    const d = await recuperer('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(requete),
+      limite: 14000,
+    });
+    const vus = new Set();
+    return (d.elements || [])
+      .map((e) => {
+        const la = e.lat ?? (e.center && e.center.lat);
+        const lo = e.lon ?? (e.center && e.center.lon);
+        const t = e.tags || {};
+        if (!Number.isFinite(la) || !t.name) return null;
+        return {
+          nom: t.name,
+          type: typeDepuisTags(t),
+          adresse: [
+            [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' '),
+            t['addr:postcode'] || '', t['addr:city'] || '',
+          ].filter(Boolean).join(', '),
+          d: distance(lat, lon, la, lo),
+        };
+      })
+      .filter((x) => x && !vus.has(x.nom) && vus.add(x.nom))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 15);
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Complète en arrière-plan un lieu qui vient d'être créé. Ne remplit que les
+ * champs restés vides, et n'affiche rien : c'est un confort, pas un événement.
+ */
+async function enrichirEnArrierePlan(lieuId) {
+  if (!reseauUtilisable()) return;
+  const lieu = etat.lieux.get(lieuId);
+  if (!lieu || !Number.isFinite(lieu.latitude)) return;
+  if (lieu.ville && lieu.pays && lieu.adresse) return;
+
+  const trouve = await geocoderInverse(lieu.latitude, lieu.longitude);
+  if (!trouve) return;
+
+  const frais = etat.lieux.get(lieuId);
+  if (!frais || frais.supprime_le) return;
+
+  const maj = { ...frais };
+  let change = false;
+  if (!maj.ville && trouve.ville) { maj.ville = trouve.ville; change = true; }
+  if (!maj.pays && trouve.pays) { maj.pays = trouve.pays; change = true; }
+  if (!maj.adresse && trouve.adresse) { maj.adresse = trouve.adresse; change = true; }
+  if (!change) return;
+
+  try {
+    await ecrire('lieux', (s) => s.lieux.put(maj));
+    etat.lieux.set(lieuId, maj);
+    // La ville courante n'est renseignée que si elle ne l'était pas : on ne
+    // touche jamais à un réglage que vous avez posé vous-même.
+    const vc = etat.prefs.ville_courante;
+    if ((!vc || !vc.ville) && maj.ville) {
+      await ecrirePref('ville_courante', { ville: maj.ville, pays: maj.pays || '' });
+    }
+    rendre();
+  } catch (_) { /* le lieu reste parfaitement utilisable sans ces champs */ }
+}
+
+/** Panneau de suggestions : les commerces autour, à choisir d'un doigt. */
+function feuilleAlentour(lieu, appliquer) {
+  let zone;
+  const f = ouvrirFeuille({
+    titre: 'Autour de vous',
+    corps: () => {
+      zone = h('div', null, h('p', { class: 'note-info', style: { marginTop: 0 } }, 'Recherche…'));
+      return zone;
+    },
+  });
+
+  (async () => {
+    if (!await autoriserReseau()) {
+      if (!f.ferme) { zone.textContent = ''; zone.append(h('p', { class: 'note-info' },
+        'La recherche en ligne est désactivée. Vous pouvez l’activer dans les réglages.')); }
+      return;
+    }
+    const liste = await lieuxAlentour(lieu.latitude, lieu.longitude);
+    if (f.ferme) return;
+    zone.textContent = '';
+
+    if (!liste.length) {
+      zone.append(h('p', { class: 'note-info' },
+        navigator.onLine === false
+          ? 'Pas de réseau pour l’instant. Le nom s’écrit très bien à la main.'
+          : 'Rien de référencé à moins de 70 mètres. Le nom s’écrit très bien à la main.'));
+      return;
+    }
+
+    zone.append(
+      h('p', { class: 'note-info', style: { marginTop: 0 } },
+        'Données OpenStreetMap. Choisir un lieu remplit son nom, son type et son adresse.'),
+      h('div', { style: { margin: '0.6rem -1rem 0' } }, liste.map((p) => h('button', {
+        class: 'rangee',
+        onclick: () => f.fermer(false, () => appliquer(p)),
+      },
+        h('div', { class: 'rangee__texte' },
+          h('div', { class: 'rangee__titre' }, p.nom),
+          h('div', { class: 'rangee__sous' }, [p.type, p.adresse].filter(Boolean).join(' — '))),
+        h('div', { class: 'rangee__droite' }, Math.round(p.d) + ' m'),
+      ))),
+    );
+  })();
 }
 
 /* ==========================================================================
@@ -2095,7 +2443,7 @@ async function construireExport() {
       photos: await collecterVignettes(l.photos, sac),
       evenements,
     };
-    if (opts.gps && isFinite(l.latitude)) {
+    if (opts.gps && Number.isFinite(l.latitude)) {
       fiche.latitude = l.latitude;
       fiche.longitude = l.longitude;
     }
@@ -2595,6 +2943,21 @@ function vueReglages() {
     h('button', { class: 'bouton bouton--calme', onclick: () => feuilleTaux(null) }, 'Ajouter un taux')));
 
   frag.append(
+    h('div', { class: 'sous-titre' }, 'Compléter depuis Internet'),
+    h('label', { class: 'rangee', style: { cursor: 'pointer' } },
+      h('input', {
+        type: 'checkbox', checked: etat.prefs.enrichissement === true,
+        style: { width: '22px', height: '22px', accentColor: 'var(--bille)', flex: '0 0 auto' },
+        onchange: async (e) => { await ecrirePref('enrichissement', e.target.checked); rendre(); },
+      }),
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' },
+          etat.prefs.enrichissement === true ? 'Autorisé' : 'Désactivé'),
+        h('div', { class: 'rangee__sous' },
+          'Retrouve la ville, la rue et les commerces autour de vous en envoyant vos '
+          + 'coordonnées à OpenStreetMap. Le carnet fonctionne entièrement sans.')),
+    ),
+
     h('div', { class: 'sous-titre' }, 'Budget'),
     h('button', { class: 'rangee', onclick: feuilleBudget },
       h('div', { class: 'rangee__texte' },
@@ -2646,7 +3009,7 @@ async function decrireVersion() {
 }
 
 function arrondiLisible(v) {
-  if (!isFinite(v)) return '?';
+  if (!Number.isFinite(v)) return '?';
   if (v >= 100) return v.toFixed(0);
   if (v >= 1) return v.toFixed(2);
   return v.toPrecision(3);
@@ -2864,10 +3227,10 @@ function feuilleTaux(deviseExistante) {
   const synchro = (source) => {
     if (source === 'vers') {
       const v = nombre(champVersEur.value);
-      champDepuisEur.value = isFinite(v) && v > 0 ? arrondiLisible(1 / v) : '';
+      champDepuisEur.value = Number.isFinite(v) && v > 0 ? arrondiLisible(1 / v) : '';
     } else {
       const v = nombre(champDepuisEur.value);
-      champVersEur.value = isFinite(v) && v > 0 ? Number((1 / v).toPrecision(8)) : '';
+      champVersEur.value = Number.isFinite(v) && v > 0 ? Number((1 / v).toPrecision(8)) : '';
     }
   };
 
@@ -2915,7 +3278,7 @@ function feuilleTaux(deviseExistante) {
       const d = (deviseExistante || champDevise.value).trim().toUpperCase();
       const v = nombre(champVersEur.value);
       if (!d) { toast('Indiquez le code de la devise, par exemple JPY.'); return false; }
-      if (!isFinite(v) || v <= 0) { toast('Le taux doit être un nombre supérieur à zéro.'); return false; }
+      if (!Number.isFinite(v) || v <= 0) { toast('Le taux doit être un nombre supérieur à zéro.'); return false; }
       await ecrirePref('taux', { ...(etat.prefs.taux || {}), [d]: v });
       rendre();
       return true;
@@ -3063,6 +3426,7 @@ async function enregistrerCapture(fichier) {
 
     // Si la position arrive en retard, elle complète le lieu sans rien écraser.
     completerPositionPlusTard(lieu, position);
+    if (nouveau) enrichirEnArrierePlan(lieu.id);
   } catch (err) {
     t.fermer();
     console.error(err);
@@ -3110,7 +3474,7 @@ function trouverOuPreparerLieu(position) {
   if (position) {
     let meilleur = null, meilleureDistance = Infinity;
     for (const l of lieuxVivants()) {
-      if (!isFinite(l.latitude) || !isFinite(l.longitude)) continue;
+      if (!Number.isFinite(l.latitude) || !Number.isFinite(l.longitude)) continue;
       const d = distance(position.latitude, position.longitude, l.latitude, l.longitude);
       if (d < RAYON_LIEU_M && d < meilleureDistance) { meilleur = l; meilleureDistance = d; }
     }
@@ -3168,12 +3532,13 @@ function completerPositionPlusTard(lieu, dejaObtenue) {
   positionEnCours.then(async (pos) => {
     if (!pos) return;
     const frais = etat.lieux.get(lieu.id);
-    if (!frais || isFinite(frais.latitude)) return;
+    if (!frais || Number.isFinite(frais.latitude)) return;
     frais.latitude = pos.latitude;
     frais.longitude = pos.longitude;
     try {
       await ecrire('lieux', (s) => s.lieux.put(frais));
       if (etat.vue.nom === 'lieu') rendre();
+      enrichirEnArrierePlan(lieu.id);
     } catch (_) { /* sans position, le lieu reste parfaitement utilisable */ }
   });
 }
@@ -3196,12 +3561,13 @@ function saisirMontant() {
   const devise = etat.prefs.devise_courante || 'EUR';
   const taux = etat.prefs.taux || {};
   let champMontant, champDevise, apercu;
+  let photoTicket = null;   // le ticket photographie, attache a la creation
 
   const rafraichir = () => {
     const m = nombre(champMontant.value);
     const d = champDevise.value.trim().toUpperCase() || 'EUR';
     const t = d === 'EUR' ? 1 : taux[d];
-    apercu.textContent = (isFinite(m) && d !== 'EUR' && t)
+    apercu.textContent = (Number.isFinite(m) && d !== 'EUR' && t)
       ? '≈ ' + formatEuros(m * t)
       : (d !== 'EUR' && !t ? 'Taux inconnu — à saisir en enregistrant' : '');
   };
@@ -3231,24 +3597,24 @@ function saisirMontant() {
           apercu),
         h('p', { class: 'note-info' },
           'Le lieu est déduit de votre position. Vous pourrez préciser la catégorie et le bénéficiaire ce soir.'),
-        boutonCollerTicket(({ montant, devise }) => {
+        boutonLireTicket(({ montant, devise }) => {
           champMontant.value = String(montant);
           if (devise) champDevise.value = devise;
           rafraichir();
-        }),
+        }, null, (prete) => { photoTicket = prete; }),
       );
     },
     valider: async () => {
       const m = nombre(champMontant.value);
-      if (!isFinite(m)) { toast('Saisissez un montant.'); return false; }
+      if (!Number.isFinite(m)) { toast('Saisissez un montant.'); return false; }
       const d = champDevise.value.trim().toUpperCase() || 'EUR';
       const t = d === 'EUR' ? 1 : (etat.prefs.taux || {})[d];
       if (!t) {
         // Une devise sans taux connu : on demande le taux maintenant, une fois.
-        f.fermer(false, () => demanderTauxPuis(d, (tauxSaisi) => creerDepenseRapide(m, d, tauxSaisi)));
+        f.fermer(false, () => demanderTauxPuis(d, (tauxSaisi) => creerDepenseRapide(m, d, tauxSaisi, photoTicket)));
         return false;
       }
-      await creerDepenseRapide(m, d, t);
+      await creerDepenseRapide(m, d, t, photoTicket);
       return true;
     },
   });
@@ -3271,7 +3637,7 @@ function demanderTauxPuis(devise, suite) {
     },
     valider: async () => {
       const v = nombre(champ.value);
-      if (!isFinite(v) || v <= 0) { toast('Un nombre supérieur à zéro, par exemple 158.'); return false; }
+      if (!Number.isFinite(v) || v <= 0) { toast('Un nombre supérieur à zéro, par exemple 158.'); return false; }
       const versEur = 1 / v;
       await ecrirePref('taux', { ...(etat.prefs.taux || {}), [devise]: versEur });
       await suite(versEur);
@@ -3280,7 +3646,7 @@ function demanderTauxPuis(devise, suite) {
   });
 }
 
-async function creerDepenseRapide(montant, devise, taux) {
+async function creerDepenseRapide(montant, devise, taux, photo) {
   try {
     const position = await Promise.race([
       positionEnCours || Promise.resolve(null),
@@ -3292,9 +3658,13 @@ async function creerDepenseRapide(montant, devise, taux) {
       lieu_id: lieu.id, type: 'depense',
       date: isoLocal(maintenant), heure: heureLocale(maintenant),
       montant, devise, taux_vers_eur: taux,
+      photos: photo ? [photo.reference] : [],
     });
+    if (photo) photo.enregistrement.parent_id = ev.id;
 
-    await ecrire(['lieux', 'evenements'], (s) => {
+    // Une seule transaction : le ticket et sa dépense arrivent ensemble.
+    await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+      if (photo) s.photos.put(photo.enregistrement);
       if (nouveau) s.lieux.put(lieu);
       s.evenements.put(ev);
     });
@@ -3308,6 +3678,7 @@ async function creerDepenseRapide(montant, devise, taux) {
     rendre();
     annoncerAjout(ev, lieu, nouveau);
     completerPositionPlusTard(lieu, position);
+    if (nouveau) enrichirEnArrierePlan(lieu.id);
   } catch (err) {
     console.error(err);
     toast(messageErreurEcriture(err));
@@ -3394,7 +3765,7 @@ function feuilleEvenement(evOrigine, options = {}) {
     if (argent) {
       champs.montant = h('input', {
         type: 'text', inputmode: 'decimal',
-        value: isFinite(ev.montant) && ev.montant !== null ? String(ev.montant) : '',
+        value: Number.isFinite(ev.montant) && ev.montant !== null ? String(ev.montant) : '',
         style: { fontFamily: 'var(--police-chiffres)', textAlign: 'right' },
         oninput: majApercu,
       });
@@ -3423,7 +3794,7 @@ function feuilleEvenement(evOrigine, options = {}) {
         h('datalist', { id: 'l-devises-3' },
           [...new Set([...Object.keys(taux), ...DEVISES_COURANTES])].map((d) => h('option', { value: d }))),
         champs.apercu,
-        boutonCollerTicket(({ montant, devise }) => {
+        boutonLireTicket(({ montant, devise }) => {
           champs.montant.value = String(montant);
           if (devise) {
             champs.devise.value = devise;
@@ -3432,6 +3803,12 @@ function feuilleEvenement(evOrigine, options = {}) {
             else if (connu) champs.taux.value = String(connu);
           }
           majApercu();
+        }, lieuCourant && lieuCourant.id, (prete) => {
+          // Le ticket photographié rejoint l'entrée : la preuve reste avec la dépense.
+          collecter();
+          ev.photos.push(prete.reference);
+          photosAAjouter.push(prete.enregistrement);
+          redessiner();
         })));
 
       boite.append(h('div', { class: 'champ' },
@@ -3525,7 +3902,7 @@ function feuilleEvenement(evOrigine, options = {}) {
     const m = nombre(champs.montant.value);
     const d = champs.devise.value.trim().toUpperCase() || 'EUR';
     const t = d === 'EUR' ? 1 : nombre(champs.taux.value);
-    champs.apercu.textContent = (isFinite(m) && isFinite(t) && d !== 'EUR')
+    champs.apercu.textContent = (Number.isFinite(m) && Number.isFinite(t) && d !== 'EUR')
       ? '= ' + formatEuros(m * t) : '';
   }
 
@@ -3538,10 +3915,10 @@ function feuilleEvenement(evOrigine, options = {}) {
     if (champs.categorie) ev.categorie = champs.categorie.value;
     if (champs.montant) {
       const m = nombre(champs.montant.value);
-      ev.montant = isFinite(m) ? m : null;
+      ev.montant = Number.isFinite(m) ? m : null;
       ev.devise = champs.devise.value.trim().toUpperCase() || 'EUR';
       const t = nombre(champs.taux.value);
-      ev.taux_vers_eur = ev.devise === 'EUR' ? 1 : (isFinite(t) ? t : null);
+      ev.taux_vers_eur = ev.devise === 'EUR' ? 1 : (Number.isFinite(t) ? t : null);
     }
   }
 
@@ -3667,7 +4044,7 @@ function feuilleLieu(lieuOrigine) {
     boite.append(h('div', { class: 'champ' },
       h('span', { class: 'legende' }, 'Position'),
       h('div', { class: 'aide', style: { marginTop: 0 } },
-        isFinite(lieu.latitude)
+        Number.isFinite(lieu.latitude)
           ? lieu.latitude.toFixed(5) + ', ' + lieu.longitude.toFixed(5)
           : 'Aucune position enregistrée.'),
       h('button', {
@@ -3681,7 +4058,47 @@ function feuilleLieu(lieuOrigine) {
           redessiner();
           toast('Position mise à jour.');
         },
-      }, isFinite(lieu.latitude) ? 'Mettre à jour avec ma position' : 'Utiliser ma position')));
+      }, Number.isFinite(lieu.latitude) ? 'Mettre à jour avec ma position' : 'Utiliser ma position'),
+
+      // Enrichissement en ligne : la position devient une rue et un nom.
+      h('button', {
+        type: 'button', class: 'bouton bouton--calme',
+        disabled: !Number.isFinite(lieu.latitude),
+        onclick: async () => {
+          if (!await autoriserReseau()) return toast('Recherche en ligne désactivée.');
+          if (navigator.onLine === false) {
+            return toast('Pas de réseau pour l’instant. Réessayez plus tard, ou écrivez à la main.');
+          }
+          const t = toast('Recherche de l’adresse…', [], 0);
+          const trouve = await geocoderInverse(lieu.latitude, lieu.longitude);
+          t.fermer();
+
+          if (trouve) {
+            collecter();
+            // Ce que vous avez écrit reste : on ne remplit que les trous.
+            if (!lieu.ville && trouve.ville) lieu.ville = trouve.ville;
+            if (!lieu.pays && trouve.pays) lieu.pays = trouve.pays;
+            if (!lieu.adresse && trouve.adresse) lieu.adresse = trouve.adresse;
+            redessiner();
+            toast('Adresse complétée. Vérifiez-la.');
+          } else {
+            toast('Le service n’a rien renvoyé. Vous pouvez écrire à la main.');
+          }
+
+          feuilleAlentour(lieu, (p) => {
+            collecter();
+            lieu.nom = p.nom;
+            lieu.type = p.type;
+            if (p.adresse) lieu.adresse = p.adresse;
+            redessiner();
+          });
+        },
+      }, 'Compléter depuis Internet'),
+
+      !Number.isFinite(lieu.latitude)
+        ? h('div', { class: 'aide' }, 'Enregistrez d’abord une position pour pouvoir chercher.')
+        : null,
+    ));
 
     boite.append(h('div', { class: 'champ' },
       h('span', { class: 'legende' }, 'Photos du lieu'),
@@ -3775,11 +4192,11 @@ function feuilleLieu(lieuOrigine) {
 /** Choix d'un lieu existant, par distance quand on connaît la position. */
 function choisirLieu(ev, retour) {
   const ref = etat.lieux.get(ev.lieu_id);
-  const base = (ref && isFinite(ref.latitude)) ? ref : null;
+  const base = (ref && Number.isFinite(ref.latitude)) ? ref : null;
 
   const liste = lieuxVivants().map((l) => ({
     lieu: l,
-    d: (base && isFinite(l.latitude))
+    d: (base && Number.isFinite(l.latitude))
       ? distance(base.latitude, base.longitude, l.latitude, l.longitude) : null,
   })).sort((a, b) => {
     if (a.d !== null && b.d !== null) return a.d - b.d;
@@ -4127,7 +4544,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v5';
+const VERSION_APP = 'carnet-v7';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.

@@ -200,7 +200,7 @@ function jourLong(iso) {
   return (d.getFullYear() === new Date().getFullYear() ? FMT_JOUR : FMT_JOUR_AN).format(d);
 }
 function montant(v, devise) {
-  if (!isFinite(v)) return '';
+  if (!Number.isFinite(v)) return '';
   try {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency', currency: devise || 'EUR',
@@ -326,7 +326,7 @@ function ligne(ev, lieu) {
   if (lieu.type) meta.push(lieu.type);
   if (lieu.ville) meta.push((meta.length ? 'à ' : '') + lieu.ville);
 
-  const aPrix = isFinite(ev.montant) && ev.montant !== null;
+  const aPrix = Number.isFinite(ev.montant) && ev.montant !== null;
 
   return h('div', { class: 'ligne' + (aPrix ? ' argent' : '') },
     h('div', { class: 'marge' },
