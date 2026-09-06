@@ -389,6 +389,72 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
 }
 
+/* ------------------------------------------------- carte et statistiques -- */
+
+.stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem; padding: 1.2rem 1rem 0.4rem;
+}
+.stat { text-align: left; }
+.stat__n {
+  font-size: 1.7rem; font-weight: 650; letter-spacing: -0.03em; line-height: 1.05;
+}
+.stat__mot { font-size: 0.72rem; color: var(--graphite); margin-top: 0.1rem; }
+
+/* La toile : pas de fond de plan, une trame très discrète qui rappelle le
+   papier quadrillé du carnet et donne un repère de régularité. */
+.toile {
+  position: relative; width: 100%; aspect-ratio: 4 / 3;
+  border: 1px solid var(--reglure); border-radius: var(--rayon);
+  background-image:
+    linear-gradient(to right, var(--reglure) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--reglure) 1px, transparent 1px);
+  background-size: 12.5% 16.667%;
+  overflow: hidden;
+}
+.toile__trace {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none;
+}
+.toile__trace polyline {
+  fill: none; stroke: var(--bille); stroke-width: 0.35;
+  stroke-linejoin: round; stroke-linecap: round; opacity: 0.45;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Cible de 30 px pour le doigt, point de 10 px pour l'œil. */
+.point {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 30px; height: 30px; padding: 0; border: 0; background: none;
+  cursor: pointer; display: grid; place-items: center;
+}
+.point__rond {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--bille);
+  box-shadow: 0 0 0 2px var(--papier);   /* l'anneau sépare deux points voisins */
+}
+.point:active .point__rond { transform: scale(1.35); }
+.point__nom {
+  position: absolute; left: 50%; top: 100%;
+  transform: translateX(-50%);
+  font-size: 0.66rem; color: var(--graphite); white-space: nowrap;
+  pointer-events: none; max-width: 8rem; overflow: hidden; text-overflow: ellipsis;
+}
+
+.echelle {
+  position: absolute; left: 0.7rem; bottom: 0.6rem;
+  min-width: 20%; pointer-events: none;
+}
+.echelle__barre {
+  height: 2px; background: var(--encre); opacity: 0.55;
+  border-left: 1px solid var(--encre); border-right: 1px solid var(--encre);
+  box-sizing: content-box;
+}
+.echelle__mot {
+  font-size: 0.66rem; color: var(--graphite); margin-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --------------------------------------------------------------- vide ---- */
 
 .vide { padding: 3.5rem 1.6rem; text-align: center; }
@@ -1132,6 +1198,7 @@ function rendre() {
     lieu: vueLieu,
     argent: vueArgent,
     partage: vuePartage,
+    carte: vueCarte,
     corbeille: vueCorbeille,
     reglages: vueReglages,
   };
@@ -1152,7 +1219,7 @@ function rendreEntete() {
   e.textContent = '';
 
   if (etat.vue.nom !== 'journal') {
-    const titres = { lieu: 'Lieu', argent: 'Argent', partage: 'Partage', corbeille: 'Corbeille', reglages: 'Réglages' };
+    const titres = { lieu: 'Lieu', argent: 'Argent', carte: 'Carte', partage: 'Partage', corbeille: 'Corbeille', reglages: 'Réglages' };
     e.append(
       h('button', { class: 'retour', onclick: () => history.back() },
         svg(ICONES.fleche), 'Carnet'),
@@ -2949,6 +3016,536 @@ function feuilleGitHub() {
   });
 }
 
+/* ==========================================================================
+   SAUVEGARDE COMPLÈTE (phase 4)
+
+   Vos données vous appartiennent : un fichier, tout dedans, lisible sans cette
+   app. C'est le seul filet contre un téléphone perdu ou un navigateur qui
+   purge son stockage.
+
+   Le jeton GitHub, lui, ne part JAMAIS dans la sauvegarde : un fichier qui
+   traîne dans un cloud ne doit pas contenir un droit d'écriture.
+   ========================================================================== */
+
+const FORMAT_SAUVEGARDE = 'carnet-voyage';
+
+function base64EnBlob(b64, type) {
+  const bin = atob(b64);
+  const octets = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) octets[i] = bin.charCodeAt(i);
+  return new Blob([octets], { type: type || 'application/octet-stream' });
+}
+
+/** Préférences sauvegardables : tout, sauf le secret. */
+function prefsSauvegardables() {
+  const copie = { ...etat.prefs };
+  if (copie.github) copie.github = { ...copie.github, token: '' };
+  delete copie.publie;          // propre au dépôt, se reconstruit tout seul
+  return copie;
+}
+
+/**
+ * Construit le fichier morceau par morceau. Chaque photo devient un Blob
+ * indépendant aussitôt encodée : la chaîne base64 peut être libérée, au lieu
+ * de s'accumuler en mémoire jusqu'à faire tomber le navigateur.
+ */
+async function construireSauvegarde({ avecPhotos, avancement }) {
+  const lieux = [...etat.lieux.values()];
+  const evenements = etat.evenements;
+  const photos = avecPhotos ? await lireTout('photos') : [];
+
+  const morceaux = [];
+  morceaux.push('{\n"format":"' + FORMAT_SAUVEGARDE + '",\n"version":1,\n'
+    + '"genere_le":' + JSON.stringify(new Date().toISOString()) + ',\n'
+    + '"avec_photos":' + (avecPhotos ? 'true' : 'false') + ',\n'
+    + '"compte":' + JSON.stringify({
+      lieux: lieux.length, evenements: evenements.length, photos: photos.length,
+    }) + ',\n');
+  morceaux.push('"prefs":' + JSON.stringify(prefsSauvegardables()) + ',\n');
+  morceaux.push('"lieux":' + JSON.stringify(lieux) + ',\n');
+  morceaux.push('"evenements":' + JSON.stringify(evenements) + ',\n');
+  morceaux.push('"photos":[');
+
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
+    if (avancement) avancement(i + 1, photos.length);
+    const entree = {
+      id: p.id, type_mime: p.type_mime, largeur: p.largeur, hauteur: p.hauteur,
+      poids: p.poids, cree_le: p.cree_le, parent_id: p.parent_id,
+      blob: p.blob ? await blobEnBase64(p.blob) : null,
+      vignette: p.vignette ? await blobEnBase64(p.vignette) : null,
+    };
+    // Emballé immédiatement : la chaîne base64 devient collectable.
+    morceaux.push(new Blob([(i ? ',' : '') + JSON.stringify(entree)]));
+  }
+
+  morceaux.push(']\n}\n');
+  return new Blob(morceaux, { type: 'application/json' });
+}
+
+/** Remet le fichier à l'utilisateur, par le canal que son téléphone préfère. */
+async function livrerFichier(blob, nom) {
+  try {
+    const fichier = new File([blob], nom, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [fichier] })) {
+      await navigator.share({ files: [fichier], title: nom });
+      return 'partage';
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'annule';
+    // Partage indisponible ou refusé : on retombe sur le téléchargement.
+  }
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: nom });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return 'telecharge';
+}
+
+const nomSauvegarde = () => 'carnet-' + isoLocal() + '.json';
+
+function feuilleSauvegarde() {
+  let avecPhotos = true;
+  let corps;
+
+  const construire = (f) => {
+    const boite = h('div');
+    boite.append(
+      h('p', { class: 'note-info', style: { marginTop: 0 } },
+        'Un seul fichier, qui contient tout : lieux, entrées, taux, réglages — '
+        + 'et les photos si vous les incluez. Rangez-le ailleurs que sur ce téléphone.'),
+
+      h('div', { class: 'champ' },
+        h('span', { class: 'legende' }, 'Contenu'),
+        h('div', { class: 'segments', role: 'group' },
+          [[true, 'Avec les photos'], [false, 'Sans les photos']].map(([v, label]) =>
+            h('button', {
+              type: 'button', 'aria-pressed': avecPhotos === v ? 'true' : 'false',
+              onclick: () => { avecPhotos = v; corps.textContent = ''; corps.append(construire(f)); },
+            }, label))),
+        h('div', { id: 'zone-taille', class: 'aide' }, 'Estimation…')),
+
+      h('button', {
+        class: 'bouton',
+        onclick: async () => {
+          const t = toast('Préparation de la sauvegarde…', [], 0);
+          const dire = (m) => { const z = t.el.querySelector('.toast__texte'); if (z) z.textContent = m; };
+          try {
+            const blob = await construireSauvegarde({
+              avecPhotos,
+              avancement: (i, n) => { if (n > 4) dire('Photo ' + i + ' sur ' + n + '…'); },
+            });
+            dire('Enregistrement…');
+            const issue = await livrerFichier(blob, nomSauvegarde());
+            t.fermer();
+            if (issue === 'annule') return;
+            await ecrirePref('derniere_sauvegarde', new Date().toISOString());
+            toast(issue === 'partage'
+              ? 'Sauvegarde envoyée.'
+              : 'Sauvegarde téléchargée : ' + nomSauvegarde() + '.');
+            rendre();
+          } catch (err) {
+            t.fermer();
+            console.error(err);
+            toast('La sauvegarde n’a pas pu être créée. Réessayez sans les photos pour un fichier plus léger.', [], 9000);
+          }
+        },
+      }, 'Créer la sauvegarde'),
+
+      h('button', { class: 'bouton bouton--calme', onclick: () => f.fermer(false, choisirSauvegarde) },
+        'Restaurer un fichier'),
+
+      h('p', { class: 'note-info' },
+        'Le jeton GitHub n’est jamais inclus : un fichier de sauvegarde ne doit pas '
+        + 'transporter un droit d’écriture sur votre dépôt.'),
+    );
+    return boite;
+  };
+
+  ouvrirFeuille({
+    titre: 'Sauvegarde',
+    corps: (f) => {
+      corps = h('div');
+      corps.append(construire(f));
+      estimerTailleSauvegarde();
+      return corps;
+    },
+  });
+}
+
+async function estimerTailleSauvegarde() {
+  const zone = $('#zone-taille');
+  if (!zone) return;
+  try {
+    const photos = await lireTout('photos');
+    const octets = photos.reduce((s, p) =>
+      s + (p.blob ? p.blob.size : 0) + (p.vignette ? p.vignette.size : 0), 0);
+    if (!$('#zone-taille')) return;
+    // Le base64 gonfle d'environ un tiers.
+    $('#zone-taille').textContent = photos.length
+      ? photos.length + ' photos, soit environ ' + ((octets * 1.37) / 1048576).toFixed(0)
+        + ' Mo avec les photos, quelques dizaines de Ko sans.'
+      : 'Aucune photo pour l’instant : le fichier sera très léger.';
+  } catch (_) { /* estimation facultative */ }
+}
+
+function choisirSauvegarde() {
+  const entree = h('input', {
+    type: 'file', accept: 'application/json,.json', hidden: true,
+    onchange: async (e) => {
+      const fichier = e.target.files && e.target.files[0];
+      entree.remove();
+      if (fichier) await ouvrirSauvegarde(fichier);
+    },
+  });
+  document.body.append(entree);
+  entree.click();
+}
+
+async function ouvrirSauvegarde(fichier) {
+  const t = toast('Lecture du fichier…', [], 0);
+  let data;
+  try {
+    data = JSON.parse(await fichier.text());
+  } catch (_) {
+    t.fermer();
+    return toast('Ce fichier n’est pas lisible. Choisissez une sauvegarde du carnet.', [], 8000);
+  }
+  t.fermer();
+
+  if (!data || data.format !== FORMAT_SAUVEGARDE || !Array.isArray(data.lieux)) {
+    return toast('Ce fichier n’est pas une sauvegarde du carnet.', [], 8000);
+  }
+
+  const c = data.compte || {};
+  const dejaLa = etat.lieux.size > 0 || etat.evenements.length > 0;
+
+  ouvrirFeuille({
+    titre: 'Restaurer',
+    corps: (f) => h('div', null,
+      h('p', { style: { marginTop: 0, fontFamily: 'var(--police-texte)', fontSize: '1.02rem' } },
+        'Sauvegarde du ' + (data.genere_le ? formatDateCourte(data.genere_le.slice(0, 10)) : '?')
+        + ' : ' + (c.lieux || 0) + ' lieux, ' + (c.evenements || 0) + ' entrées, '
+        + (c.photos || 0) + ' photos.'),
+
+      h('button', {
+        class: 'bouton',
+        onclick: () => f.fermer(false, () => appliquerSauvegarde(data, 'fusion')),
+      }, 'Ajouter ce qui manque'),
+      h('div', { class: 'aide', style: { marginBottom: '1rem' } },
+        'Rien n’est supprimé. Seuls les éléments absents du carnet actuel sont ajoutés.'),
+
+      h('button', {
+        class: 'bouton bouton--danger',
+        onclick: async () => {
+          if (dejaLa && !await confirmer({
+            titre: 'Tout remplacer',
+            message: 'Le contenu actuel du carnet — ' + etat.lieux.size + ' lieux et '
+              + etat.evenements.length + ' entrées — sera effacé et remplacé par cette sauvegarde. '
+              + 'C’est sans retour : la corbeille ne récupère pas cette opération.',
+            labelOk: 'Effacer et remplacer', danger: true,
+          })) return;
+          f.fermer(false, () => appliquerSauvegarde(data, 'remplacement'));
+        },
+      }, 'Tout remplacer'),
+      h('div', { class: 'aide' },
+        'Le carnet actuel est effacé, puis la sauvegarde est écrite à sa place.'),
+    ),
+  });
+}
+
+async function appliquerSauvegarde(data, mode) {
+  const t = toast('Restauration…', [], 0);
+  const dire = (m) => { const z = t.el.querySelector('.toast__texte'); if (z) z.textContent = m; };
+
+  try {
+    if (mode === 'remplacement') {
+      dire('Effacement du carnet actuel…');
+      await ecrire(['lieux', 'evenements', 'photos'], (s) => {
+        s.lieux.clear(); s.evenements.clear(); s.photos.clear();
+      });
+    }
+
+    const existants = mode === 'fusion'
+      ? { lieux: new Set(etat.lieux.keys()), evs: new Set(etat.evenements.map((e) => e.id)) }
+      : { lieux: new Set(), evs: new Set() };
+
+    dire('Lieux et entrées…');
+    const lieuxAEcrire = (data.lieux || []).filter((l) => l && l.id && !existants.lieux.has(l.id));
+    const evsAEcrire = (data.evenements || []).filter((e) => e && e.id && !existants.evs.has(e.id));
+    await ecrire(['lieux', 'evenements'], (s) => {
+      for (const l of lieuxAEcrire) s.lieux.put(l);
+      for (const e of evsAEcrire) s.evenements.put(e);
+    });
+
+    // Les photos par paquets : une transaction géante tiendrait mal sur mobile.
+    const photos = data.photos || [];
+    let ecrites = 0;
+    for (let i = 0; i < photos.length; i += 40) {
+      const lot = photos.slice(i, i + 40);
+      dire('Photos ' + Math.min(i + lot.length, photos.length) + ' sur ' + photos.length + '…');
+      const prets = lot.map((p) => ({
+        id: p.id, type_mime: p.type_mime, largeur: p.largeur, hauteur: p.hauteur,
+        poids: p.poids, cree_le: p.cree_le, parent_id: p.parent_id,
+        blob: p.blob ? base64EnBlob(p.blob, p.type_mime) : null,
+        vignette: p.vignette ? base64EnBlob(p.vignette, p.type_mime) : null,
+      })).filter((p) => p.id);
+      await ecrire('photos', (s) => { for (const p of prets) s.photos.put(p); });
+      ecrites += prets.length;
+    }
+
+    // Réglages : on complète sans écraser, et le jeton en place est préservé.
+    if (data.prefs) {
+      dire('Réglages…');
+      for (const [cle, valeur] of Object.entries(data.prefs)) {
+        if (cle === 'github') {
+          const actuel = etat.prefs.github || {};
+          await ecrirePref('github', { ...valeur, token: actuel.token || '' });
+          continue;
+        }
+        if (mode === 'remplacement' || etat.prefs[cle] === undefined) {
+          await ecrirePref(cle, valeur);
+        }
+      }
+    }
+
+    await chargerEtat();
+    etat.filtres = videsFiltres();
+    etat.vue = { nom: 'journal' };
+    rendre();
+    t.fermer();
+    toast('Restauré : ' + lieuxAEcrire.length + ' lieux, ' + evsAEcrire.length
+      + ' entrées, ' + ecrites + ' photos.', [], 9000);
+  } catch (err) {
+    t.fermer();
+    console.error(err);
+    await chargerEtat().catch(() => {});
+    rendre();
+    toast(messageErreurEcriture(err), [], 9000);
+  }
+}
+
+/* ==========================================================================
+   CARTE ET STATISTIQUES (phase 4)
+
+   Pas de fond de plan : les tuiles d'une carte classique se téléchargent au
+   runtime, et une carte qui attend le réseau est morte en voyage. On dessine
+   donc la constellation des lieux sur une toile vide, avec une échelle pour
+   donner la mesure et le tracé chronologique pour donner le sens.
+
+   Elle ne dégrade pas hors ligne : il n'y a rien à dégrader.
+   ========================================================================== */
+
+const A_UNE_POSITION = (l) => Number.isFinite(l.latitude) && Number.isFinite(l.longitude);
+
+function statistiquesVoyage() {
+  const lieux = lieuxVivants();
+  const evs = evenementsVivants();
+  const dates = evs.map((e) => e.date).sort();
+
+  // Kilomètres à vol d'oiseau entre lieux successifs, dans l'ordre de la
+  // première visite : ce n'est pas la distance parcourue, c'est son ombre.
+  const ordonnes = lieux.filter(A_UNE_POSITION).map((l) => {
+    const siens = evs.filter((e) => e.lieu_id === l.id).map((e) => e.date).sort();
+    return { l, premier: siens[0] || l.cree_le || '' };
+  }).sort((a, b) => (a.premier < b.premier ? -1 : 1));
+
+  let metres = 0;
+  for (let i = 1; i < ordonnes.length; i++) {
+    metres += distance(
+      ordonnes[i - 1].l.latitude, ordonnes[i - 1].l.longitude,
+      ordonnes[i].l.latitude, ordonnes[i].l.longitude);
+  }
+
+  return {
+    lieux: lieux.length,
+    villes: new Set(lieux.map((l) => l.ville).filter(Boolean)).size,
+    pays: new Set(lieux.map((l) => l.pays).filter(Boolean)).size,
+    entrees: evs.length,
+    jours: new Set(dates).size,
+    etendue: dates.length ? nbJours(dates[0], dates[dates.length - 1]) : 0,
+    premier: dates[0] || null,
+    dernier: dates[dates.length - 1] || null,
+    kilometres: Math.round(metres / 1000),
+    ordonnes,
+  };
+}
+
+/**
+ * Projette des lieux dans un carré normalisé, en respectant les proportions
+ * du terrain : un degré de longitude est plus court qu'un degré de latitude
+ * dès qu'on s'éloigne de l'équateur.
+ */
+function projeterLieux(lieux, aspect) {
+  const latMoy = lieux.reduce((s, l) => s + l.latitude, 0) / lieux.length;
+  const k = Math.cos(latMoy * Math.PI / 180) || 1;
+
+  const xs = lieux.map((l) => l.longitude * k);
+  const ys = lieux.map((l) => -l.latitude);          // le nord est en haut
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+  const L = 1000, H = 1000 / aspect, P = 90;
+  const largeurDeg = maxX - minX, hauteurDeg = maxY - minY;
+
+  // Un seul lieu, ou plusieurs confondus : on choisit une fenêtre de ~300 m.
+  const parDefaut = (L - 2 * P) / 0.0027;
+  const s = (largeurDeg <= 0 && hauteurDeg <= 0) ? parDefaut
+    : Math.min(
+      largeurDeg > 0 ? (L - 2 * P) / largeurDeg : Infinity,
+      hauteurDeg > 0 ? (H - 2 * P) / hauteurDeg : Infinity);
+
+  const decX = (L - (largeurDeg * s)) / 2 - minX * s;
+  const decY = (H - (hauteurDeg * s)) / 2 - minY * s;
+
+  return {
+    points: lieux.map((l) => ({
+      lieu: l,
+      x: ((l.longitude * k) * s + decX) / L,
+      y: ((-l.latitude) * s + decY) / H,
+    })),
+    // 111 320 m par degré : la correction cos est déjà dans les abscisses.
+    metresParUnite: 111320 / s,
+    largeurVirtuelle: L,
+  };
+}
+
+/** Choisit une longueur d'échelle ronde : 1, 2 ou 5 fois une puissance de dix. */
+function barreEchelle(metresParUnite, largeurVirtuelle) {
+  const cible = metresParUnite * largeurVirtuelle * 0.3;
+  const puissance = Math.pow(10, Math.floor(Math.log10(cible)));
+  const rond = [1, 2, 5, 10].map((f) => f * puissance).filter((v) => v <= cible * 1.3).pop() || puissance;
+  return {
+    metres: rond,
+    fraction: rond / (metresParUnite * largeurVirtuelle),
+    libelle: rond >= 1000 ? (rond / 1000).toLocaleString('fr-FR') + ' km' : rond + ' m',
+  };
+}
+
+const EST_APPLE = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+function lienCarteExterne(lieu) {
+  const nom = encodeURIComponent(nomLieu(lieu) || 'Lieu');
+  return EST_APPLE
+    ? 'https://maps.apple.com/?ll=' + lieu.latitude + ',' + lieu.longitude + '&q=' + nom
+    : 'geo:' + lieu.latitude + ',' + lieu.longitude + '?q=' + lieu.latitude + ',' + lieu.longitude + '(' + nom + ')';
+}
+
+function vueCarte() {
+  const frag = document.createDocumentFragment();
+  const st = statistiquesVoyage();
+
+  /* --- les chiffres du voyage --- */
+  frag.append(h('div', { class: 'stats' },
+    [
+      [st.lieux, st.lieux > 1 ? 'lieux' : 'lieu'],
+      [st.villes, st.villes > 1 ? 'villes' : 'ville'],
+      [st.pays, st.pays > 1 ? 'pays' : 'pays'],
+      [st.jours, st.jours > 1 ? 'jours notés' : 'jour noté'],
+    ].map(([n, mot]) => h('div', { class: 'stat' },
+      h('div', { class: 'stat__n' }, String(n)),
+      h('div', { class: 'stat__mot' }, mot))),
+  ));
+
+  if (st.premier) {
+    frag.append(h('p', { class: 'bloc__note', style: { marginTop: '0.2rem' } },
+      'Du ' + formatDateCourte(st.premier) + ' au ' + formatDateCourte(st.dernier)
+      + ', soit ' + st.etendue + (st.etendue > 1 ? ' jours' : ' jour')
+      + ' — ' + st.entrees + (st.entrees > 1 ? ' entrées' : ' entrée')
+      + (st.kilometres ? ', et ' + st.kilometres.toLocaleString('fr-FR')
+        + ' km à vol d’oiseau entre vos lieux.' : '.')));
+  }
+
+  /* --- la carte --- */
+  const avecPosition = lieuxVivants().filter(A_UNE_POSITION);
+  const villes = [...new Set(avecPosition.map((l) => l.ville).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, 'fr'));
+  const filtreVille = etat.vue.ville || '';
+  const affiches = filtreVille ? avecPosition.filter((l) => l.ville === filtreVille) : avecPosition;
+
+  frag.append(h('div', { class: 'sous-titre' }, 'Carte'));
+
+  if (!avecPosition.length) {
+    frag.append(h('div', { class: 'vide' },
+      h('div', { class: 'vide__trait', style: { background: 'var(--reglure)' } }),
+      h('h2', null, 'Aucun lieu n’a de position.'),
+      h('p', null, 'Les prochaines photos prises dehors en poseront une toute seule.')));
+    return frag;
+  }
+
+  if (villes.length > 1) {
+    const sel = h('select', {
+      onchange: (e) => majVue({ nom: 'carte', ville: e.target.value }),
+    },
+      h('option', { value: '', selected: !filtreVille }, 'Tout le voyage'),
+      villes.map((v) => h('option', { value: v, selected: filtreVille === v }, v)));
+    frag.append(h('div', { class: 'champ', style: { padding: '0 1rem' } }, sel));
+  }
+
+  const ASPECT = 4 / 3;
+  const { points, metresParUnite, largeurVirtuelle } = projeterLieux(affiches, ASPECT);
+  const echelle = barreEchelle(metresParUnite, largeurVirtuelle);
+
+  const toile = h('div', { class: 'toile' });
+
+  // Le tracé chronologique, en dessous et sans interception du toucher.
+  const suite = st.ordonnes.map((o) => points.find((p) => p.lieu.id === o.l.id)).filter(Boolean);
+  if (suite.length > 1) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 ' + (100 / ASPECT).toFixed(3));
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('class', 'toile__trace');
+    svg.setAttribute('aria-hidden', 'true');
+    const ligne = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    ligne.setAttribute('points', suite.map((p) =>
+      (p.x * 100).toFixed(2) + ',' + (p.y * 100 / ASPECT).toFixed(2)).join(' '));
+    svg.append(ligne);
+    toile.append(svg);
+  }
+
+  for (const p of points) {
+    const n = evenementsVivants().filter((e) => e.lieu_id === p.lieu.id).length;
+    toile.append(h('button', {
+      class: 'point',
+      style: { left: (p.x * 100) + '%', top: (p.y * 100) + '%' },
+      'aria-label': (nomLieu(p.lieu) || 'Lieu sans nom')
+        + (p.lieu.ville ? ', ' + p.lieu.ville : '') + ' — ' + n + ' entrée(s)',
+      onclick: () => naviguer({ nom: 'lieu', lieu_id: p.lieu.id }),
+    },
+      h('span', { class: 'point__rond' }),
+      points.length <= 12
+        ? h('span', { class: 'point__nom' }, nomLieu(p.lieu) || 'sans nom')
+        : null,
+    ));
+  }
+
+  toile.append(h('div', { class: 'echelle' },
+    h('div', { class: 'echelle__barre', style: { width: (echelle.fraction * 100) + '%' } }),
+    h('div', { class: 'echelle__mot' }, echelle.libelle)));
+
+  frag.append(h('div', { style: { padding: '0 1rem' } }, toile));
+  frag.append(h('p', { class: 'bloc__note' },
+    affiches.length + (affiches.length > 1 ? ' lieux placés' : ' lieu placé')
+    + (suite.length > 1 ? ', reliés dans l’ordre de la première visite' : '')
+    + '. Pas de fond de plan : la carte fonctionne en mode avion. Touchez un point pour ouvrir sa fiche.'));
+
+  /* --- la liste, pour ouvrir dans Plans --- */
+  frag.append(h('div', { class: 'sous-titre' }, 'Ouvrir ailleurs'));
+  for (const l of affiches.slice(0, 60)) {
+    frag.append(h('a', {
+      class: 'rangee', href: lienCarteExterne(l), target: '_blank', rel: 'noopener',
+      style: { textDecoration: 'none', color: 'inherit' },
+    },
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' }, nomLieu(l) || 'Lieu sans nom'),
+        h('div', { class: 'rangee__sous' }, [l.type, l.ville].filter(Boolean).join(', '))),
+      h('div', { class: 'rangee__droite' }, 'Plans'),
+    ));
+  }
+  return frag;
+}
+
 /* ----------------------------------------------------------- corbeille ---- */
 
 function vueCorbeille() {
@@ -3039,6 +3636,20 @@ function vueReglages() {
     h('button', { class: 'bouton bouton--calme', onclick: () => feuilleTaux(null) }, 'Ajouter un taux')));
 
   frag.append(
+    h('div', { class: 'sous-titre' }, 'Sauvegarde'),
+    h('button', { class: 'rangee', onclick: feuilleSauvegarde },
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' },
+          etat.prefs.derniere_sauvegarde
+            ? 'Dernière : ' + formatDateCourte(etat.prefs.derniere_sauvegarde.slice(0, 10))
+            : 'Jamais sauvegardé'),
+        h('div', { class: 'rangee__sous' },
+          etat.prefs.derniere_sauvegarde
+            ? 'Exporter à nouveau, ou restaurer un fichier'
+            : 'Un téléphone perdu emporterait tout le carnet')),
+      h('div', { class: 'rangee__droite' }, svg(ICONES.chevron)),
+    ),
+
     h('div', { class: 'sous-titre' }, 'Compléter depuis Internet'),
     h('label', { class: 'rangee', style: { cursor: 'pointer' } },
       h('input', {
@@ -3240,6 +3851,10 @@ function feuilleMenu() {
           nom: 'argent', mode: 'semaine', ancre: isoLocal(),
         })),
       }, 'Argent'),
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => f.fermer(false, () => naviguer({ nom: 'carte', ville: '' })),
+      }, 'Carte'),
       h('button', {
         class: 'bouton bouton--calme',
         onclick: () => f.fermer(false, () => naviguer({ nom: 'partage' })),
@@ -4640,7 +5255,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v9';
+const VERSION_APP = 'carnet-v10';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.

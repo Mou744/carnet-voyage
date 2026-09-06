@@ -25,6 +25,7 @@ contient que le code de l'application.
 
 ## État
 
+Phase 4 — confort (sauvegarde complète, carte des lieux, statistiques).
 Phase 3 — partage (viewer public, export, publication GitHub).
 Phase 2 — argent (totaux, par personne, budget).
 Phase 1 — saisie et consultation.
