@@ -24,4 +24,5 @@ contient que le code de l'application.
 
 ## État
 
+Phase 2 — argent (totaux, par personne, budget).
 Phase 1 — saisie et consultation.

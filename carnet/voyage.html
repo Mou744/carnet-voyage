@@ -271,6 +271,115 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .rangee__miniature { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; background: var(--reglure); margin: 0; }
 
+/* -------------------------------------------------------------- argent ---- */
+
+.periode { padding: 0.3rem 1rem 0.2rem; }
+.periode__nav { display: flex; align-items: center; gap: 0.2rem; margin-top: 0.5rem; }
+.periode__libelle {
+  flex: 1; text-align: center; font-size: 0.85rem; color: var(--graphite);
+}
+.periode__nav .ico { width: 2.4rem; height: 2.4rem; }
+.periode__nav .ico[disabled] { opacity: 0.28; cursor: default; }
+
+.argent__hero { padding: 1.4rem 1rem 0.2rem; }
+/* Chiffre héros : même sans que le reste, chiffres proportionnels.
+   `tabular-nums` donnerait à chaque chiffre la largeur d'un 0 et ferait
+   flotter le nombre à cette taille — il est réservé aux colonnes. */
+.hero {
+  font-family: var(--police-ui);
+  font-size: clamp(2.9rem, 14vw, 3.4rem);
+  font-weight: 650; letter-spacing: -0.035em; line-height: 1.05;
+}
+.hero__sous { color: var(--graphite); font-size: 0.88rem; margin-top: 0.3rem; }
+
+.bloc { margin-top: 2rem; }
+.bloc__titre {
+  font-size: 0.78rem; font-weight: 600; color: var(--graphite);
+  margin: 0 0 0.6rem; padding: 0 1rem;
+}
+.bloc__note {
+  font-size: 0.78rem; color: var(--graphite);
+  padding: 0 1rem; margin-top: 0.7rem;
+  border-left: 2px solid var(--reglure); margin-left: 1rem; padding-left: 0.7rem;
+}
+
+/* Rythme : une seule série, donc une seule teinte et aucune légende.
+   Barres fines, extrémité arrondie 4 px ancrée sur la ligne de base,
+   2 px de fond entre deux barres — jamais de contour. */
+.rythme {
+  display: flex; gap: 2px; align-items: flex-end;
+  height: 78px; padding: 0 1rem;
+  border-bottom: 1px solid var(--reglure);
+}
+.rythme__col {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  background: none; border: 0; padding: 0; cursor: pointer;
+}
+.rythme__barre {
+  background: var(--bille); border-radius: 4px 4px 0 0; width: 100%;
+}
+.rythme__barre--zero { background: var(--reglure); }
+.rythme__col:active .rythme__barre { opacity: 0.72; }
+.rythme__axe { display: flex; gap: 2px; padding: 0.35rem 1rem 0; }
+.rythme__axe span {
+  flex: 1; min-width: 0; text-align: center;
+  font-size: 0.68rem; color: var(--graphite);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; white-space: nowrap;
+}
+
+.part { padding: 0.55rem 1rem; }
+.part--lien {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; cursor: pointer; color: inherit;
+}
+.part--lien:active { background: var(--papier-haut); }
+.part__haut { display: flex; align-items: baseline; gap: 0.8rem; }
+.part__nom { flex: 1 1 auto; min-width: 0; font-size: 0.95rem; }
+.part__nom--vide { color: var(--graphite); font-style: italic; }
+.part__valeur {
+  flex: 0 0 auto;
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  font-size: 0.88rem;
+}
+.part__valeur--prevu { color: var(--graphite); }
+.part__note { font-size: 0.76rem; color: var(--graphite); margin-top: 0.15rem; }
+.part__piste {
+  height: 3px; background: var(--reglure); border-radius: 2px;
+  margin-top: 0.4rem; overflow: hidden;
+}
+.part__fill { height: 100%; background: var(--bille); border-radius: 2px; }
+
+.jauge {
+  height: 8px; background: var(--bille-pale); border-radius: 4px;
+  margin-top: 0.45rem; overflow: hidden;
+}
+.jauge__fill { height: 100%; background: var(--bille); border-radius: 4px; }
+
+.part__idees { margin-top: 0.4rem; }
+.idee {
+  display: flex; width: 100%; gap: 0.8rem; align-items: baseline;
+  background: none; border: 0; cursor: pointer; color: inherit;
+  padding: 0.35rem 0; text-align: left;
+  border-top: 1px solid var(--reglure);
+  font-size: 0.85rem;
+}
+.idee span:first-child { flex: 1 1 auto; min-width: 0; }
+.idee__prix {
+  flex: 0 0 auto; color: var(--graphite);
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+}
+
+/* Un montant prévu mais pas dépensé reste gris : il n'a pas la voix du stylo. */
+.ligne__prevu { color: var(--graphite) !important; }
+
+.jour__totaux--lien {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: inherit; font: inherit;
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+}
+
 /* --------------------------------------------------------------- vide ---- */
 
 .vide { padding: 3.5rem 1.6rem; text-align: center; }
@@ -619,6 +728,23 @@ function enEuros(ev) {
   return isFinite(taux) && taux > 0 ? ev.montant * taux : 0;
 }
 const aUnMontant = (ev) => isFinite(ev.montant) && ev.montant !== null && ev.montant !== 0;
+
+/**
+ * Une idée d'achat porte un montant estimé, mais cet argent n'est pas sorti.
+ * Elle est donc exclue de TOUS les totaux et vit dans « reste à acheter ».
+ */
+const estIdee = (ev) => ev.type === 'achat' && ev.statut_achat === 'idée';
+const estDepense = (ev) => aUnMontant(ev) && !estIdee(ev);
+
+/* Nombre de jours couverts par un intervalle, bornes incluses. */
+function nbJours(du, au) {
+  return Math.round((dateDepuisIso(au) - dateDepuisIso(du)) / 86400000) + 1;
+}
+function decalerJours(iso, n) {
+  const d = dateDepuisIso(iso);
+  d.setDate(d.getDate() + n);
+  return isoLocal(d);
+}
 
 /* ----------------------------------------------------------- géographie ---- */
 
@@ -987,7 +1113,7 @@ function rendre() {
   const conteneur = $('#vue');
   conteneur.textContent = '';
   $('#entete').hidden = false;
-  $('#barre').hidden = etat.vue.nom !== 'journal' && etat.vue.nom !== 'lieu';
+  $('#barre').hidden = !['journal', 'lieu', 'argent'].includes(etat.vue.nom);
 
   rendreEntete();
   rendreBarre();
@@ -995,6 +1121,7 @@ function rendre() {
   const parVue = {
     journal: vueJournal,
     lieu: vueLieu,
+    argent: vueArgent,
     corbeille: vueCorbeille,
     reglages: vueReglages,
   };
@@ -1015,7 +1142,7 @@ function rendreEntete() {
   e.textContent = '';
 
   if (etat.vue.nom !== 'journal') {
-    const titres = { lieu: 'Lieu', corbeille: 'Corbeille', reglages: 'Réglages' };
+    const titres = { lieu: 'Lieu', argent: 'Argent', corbeille: 'Corbeille', reglages: 'Réglages' };
     e.append(
       h('button', { class: 'retour', onclick: () => history.back() },
         svg(ICONES.fleche), 'Carnet'),
@@ -1094,7 +1221,7 @@ function vueJournal() {
       h('div', { class: 'jour__entete' },
         h('div', { class: 'jour__date' + (date === ajd ? ' est-aujourdhui' : '') },
           date === ajd ? "aujourd'hui" : formatJour(date)),
-        totauxDuJour(liste),
+        totauxDuJour(liste, date),
       ),
       h('div', null, liste.map(ligneEvenement)),
     );
@@ -1107,35 +1234,47 @@ function vueJournal() {
  * étrangère, on affiche ce total d'origine en premier et l'euro en dessous :
  * c'est dans cette devise-là que la journée a été vécue.
  */
-function totauxDuJour(liste) {
-  const avecMontant = liste.filter(aUnMontant);
-  if (!avecMontant.length) return h('div', { class: 'jour__totaux' });
+function totauxDuJour(liste, date) {
+  // Les idées d'achat portent un montant estimé, jamais dépensé : hors total.
+  const depenses = liste.filter(estDepense);
+  if (!depenses.length) return h('div', { class: 'jour__totaux' });
 
-  const euros = avecMontant.reduce((s, e) => s + enEuros(e), 0);
-  const devises = new Set(avecMontant.map((e) => e.devise || 'EUR'));
+  const euros = depenses.reduce((s, e) => s + enEuros(e), 0);
+  const devises = new Set(depenses.map((e) => e.devise || 'EUR'));
 
+  let contenu;
   if (devises.size === 1) {
     const dev = [...devises][0];
-    const brut = avecMontant.reduce((s, e) => s + e.montant, 0);
-    if (dev === 'EUR') return h('div', { class: 'jour__totaux' }, formatEuros(brut));
-    return h('div', { class: 'jour__totaux' },
-      formatMontant(brut, dev),
-      h('div', { class: 'secondaire' }, formatEuros(euros)));
+    const brut = depenses.reduce((s, e) => s + e.montant, 0);
+    contenu = dev === 'EUR'
+      ? [formatEuros(brut)]
+      : [formatMontant(brut, dev), h('div', { class: 'secondaire' }, formatEuros(euros))];
+  } else {
+    contenu = [formatEuros(euros), h('div', { class: 'secondaire' }, devises.size + ' devises')];
   }
-  return h('div', { class: 'jour__totaux' }, formatEuros(euros),
-    h('div', { class: 'secondaire' }, devises.size + ' devises'));
+
+  // Le total du jour est une porte vers l'écran Argent, sur ce jour-là.
+  if (!date) return h('div', { class: 'jour__totaux' }, contenu);
+  return h('button', {
+    class: 'jour__totaux jour__totaux--lien',
+    'aria-label': 'Voir le détail de cette journée',
+    onclick: () => naviguer({ nom: 'argent', mode: 'jour', ancre: date }),
+  }, contenu);
 }
 
 function ligneEvenement(ev) {
   const lieu = lieuDe(ev);
   const argent = aUnMontant(ev);
+  const idee = estIdee(ev);
   const photos = ev.photos || [];
 
   const marge = h('div', { class: 'ligne__marge' },
     h('span', { class: 'ligne__heure' }, ev.heure || ''),
     argent
       ? [
-        h('span', { class: 'ligne__montant' }, formatMontant(ev.montant, ev.devise)),
+        // Une idée s'affiche en gris : c'est un prix, pas une dépense.
+        h('span', { class: 'ligne__montant' + (idee ? ' ligne__prevu' : '') },
+          formatMontant(ev.montant, ev.devise)),
         ev.devise !== 'EUR' && enEuros(ev)
           ? h('span', { class: 'ligne__euros' }, formatEuros(enEuros(ev)))
           : null,
@@ -1163,7 +1302,7 @@ function ligneEvenement(ev) {
     ),
   );
 
-  const cls = 'ligne' + (argent ? ' ligne--argent' : '')
+  const cls = 'ligne' + (estDepense(ev) ? ' ligne--argent' : '')
     + (ev.id === idNouvelleLigne ? ' ligne--nouvelle' : '');
   return h('div', { class: cls, dataset: { id: ev.id } }, marge, corps);
 }
@@ -1298,12 +1437,446 @@ function vueLieu() {
       frag.append(
         h('div', { class: 'jour__entete' },
           h('div', { class: 'jour__date' }, formatJour(date)),
-          totauxDuJour(liste)),
+          totauxDuJour(liste, date)),
         h('div', null, liste.map(ligneEvenement)),
       );
     }
   }
   return frag;
+}
+
+/* ==========================================================================
+   ARGENT (phase 2)
+
+   Règle intangible, posée par le carnet et rappelée ici : chaque montant est
+   converti avec LE TAUX DU JOUR OÙ IL A ÉTÉ NOTÉ, figé dans l'événement. On
+   ne recalcule jamais un total passé au taux d'aujourd'hui. « J'ai dépensé
+   25,80 € ce jour-là » doit rester vrai pour toujours.
+
+   Deuxième règle : une idée d'achat n'est pas une dépense. Elle est exclue de
+   tous les totaux et vit dans sa propre liste.
+   ========================================================================== */
+
+const FMT_JOUR_MOIS = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' });
+const FMT_MOIS_ANNEE = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' });
+const FMT_JOUR_COURT = new Intl.DateTimeFormat('fr-FR', { weekday: 'narrow' });
+
+function lundiDe(iso) {
+  const d = dateDepuisIso(iso);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // lundi = premier jour, usage français
+  return isoLocal(d);
+}
+
+/** Bornes de la période affichée, selon le mode et la date d'ancrage. */
+function bornesPeriode(mode, ancre) {
+  if (mode === 'jour') return { du: ancre, au: ancre };
+  if (mode === 'semaine') {
+    const du = lundiDe(ancre);
+    return { du, au: decalerJours(du, 6) };
+  }
+  if (mode === 'mois') {
+    const d = dateDepuisIso(ancre);
+    const du = isoLocal(new Date(d.getFullYear(), d.getMonth(), 1));
+    const au = isoLocal(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+    return { du, au };
+  }
+  // « tout » : du premier jour noté jusqu'à aujourd'hui.
+  const dates = evenementsVivants().map((e) => e.date).sort();
+  return { du: dates[0] || isoLocal(), au: isoLocal() };
+}
+
+function decalerPeriode(mode, ancre, sens) {
+  if (mode === 'jour') return decalerJours(ancre, sens);
+  if (mode === 'semaine') return decalerJours(lundiDe(ancre), sens * 7);
+  if (mode === 'mois') {
+    const d = dateDepuisIso(ancre);
+    return isoLocal(new Date(d.getFullYear(), d.getMonth() + sens, 1));
+  }
+  return ancre;
+}
+
+function libellePeriode(mode, du, au) {
+  if (mode === 'tout') return 'tout le carnet';
+  if (mode === 'mois') return FMT_MOIS_ANNEE.format(dateDepuisIso(du));
+  if (du === au) return du === isoLocal() ? "aujourd'hui" : formatJour(du);
+  const a = dateDepuisIso(du), b = dateDepuisIso(au);
+  return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
+    ? a.getDate() + ' – ' + FMT_JOUR_MOIS.format(b)
+    : FMT_JOUR_MOIS.format(a) + ' – ' + FMT_JOUR_MOIS.format(b);
+}
+
+/** Somme par clé, triée du plus gros au plus petit. */
+function repartir(evs, cle) {
+  const par = new Map();
+  for (const ev of evs) {
+    const k = cle(ev) || '';
+    const c = par.get(k) || { euros: 0, n: 0 };
+    c.euros += enEuros(ev);
+    c.n += 1;
+    par.set(k, c);
+  }
+  return [...par.entries()]
+    .map(([k, v]) => ({ cle: k, ...v }))
+    .sort((a, b) => b.euros - a.euros);
+}
+
+/**
+ * Regroupement du rythme en 5 à 12 colonnes selon l'étendue : c'est ce qui
+ * garde des barres tapables au doigt, quelle que soit la période choisie.
+ */
+function bucketsRythme(du, au, evs) {
+  const span = nbJours(du, au);
+  if (span < 2) return null;                       // un seul jour : pas de graphique
+
+  let pas, mode;
+  if (span <= 12) { pas = 'jour'; mode = 'jour'; }
+  else if (span <= 84) { pas = 'semaine'; mode = 'semaine'; }
+  else { pas = 'mois'; mode = 'mois'; }
+
+  const seaux = [];
+  let curseur = pas === 'jour' ? du : pas === 'semaine' ? lundiDe(du)
+    : isoLocal(new Date(dateDepuisIso(du).getFullYear(), dateDepuisIso(du).getMonth(), 1));
+
+  while (curseur <= au && seaux.length < 40) {
+    const bornes = bornesPeriode(pas, curseur);
+    seaux.push({
+      ancre: curseur, mode,
+      du: bornes.du, au: bornes.au,
+      euros: 0,
+      etiquette: pas === 'jour' ? FMT_JOUR_COURT.format(dateDepuisIso(curseur))
+        : pas === 'semaine' ? String(dateDepuisIso(bornes.du).getDate())
+          : FMT_MOIS_ANNEE.format(dateDepuisIso(curseur)).slice(0, 3),
+    });
+    curseur = decalerPeriode(pas, curseur, 1);
+  }
+  for (const ev of evs) {
+    const s = seaux.find((x) => ev.date >= x.du && ev.date <= x.au);
+    if (s) s.euros += enEuros(ev);
+  }
+  return seaux.length >= 2 ? seaux : null;
+}
+
+/** `append` ignore les sections vides — sans quoi le DOM afficherait « null ». */
+function ajouter(frag, ...sections) {
+  for (const s of sections) if (s) frag.append(s);
+}
+
+function vueArgent() {
+  const mode = etat.vue.mode || 'semaine';
+  const ancre = etat.vue.ancre || isoLocal();
+  const { du, au } = bornesPeriode(mode, ancre);
+
+  const evs = evenementsVivants().filter((e) => e.date >= du && e.date <= au && estDepense(e));
+  const total = evs.reduce((s, e) => s + enEuros(e), 0);
+
+  // Moyenne sur les jours écoulés seulement : une période à venir ne dilue pas.
+  const auEcoule = au > isoLocal() ? isoLocal() : au;
+  const joursEcoules = Math.max(1, nbJours(du, auEcoule < du ? du : auEcoule));
+  const moyenne = total / joursEcoules;
+
+  const frag = document.createDocumentFragment();
+
+  /* --- sélecteur de période --------------------------------------------- */
+  frag.append(h('div', { class: 'periode' },
+    h('div', { class: 'segments', role: 'group', 'aria-label': 'Période' },
+      [['jour', 'Jour'], ['semaine', 'Semaine'], ['mois', 'Mois'], ['tout', 'Tout']].map(([m, label]) =>
+        h('button', {
+          type: 'button', 'aria-pressed': mode === m ? 'true' : 'false',
+          onclick: () => majVue({ nom: 'argent', mode: m, ancre }),
+        }, label))),
+    h('div', { class: 'periode__nav' },
+      h('button', {
+        class: 'ico', 'aria-label': 'Période précédente', disabled: mode === 'tout',
+        onclick: () => majVue({ nom: 'argent', mode, ancre: decalerPeriode(mode, ancre, -1) }),
+      }, svg(ICONES.fleche)),
+      h('div', { class: 'periode__libelle' }, libellePeriode(mode, du, au)),
+      h('button', {
+        class: 'ico', 'aria-label': 'Période suivante',
+        disabled: mode === 'tout' || au >= isoLocal(),
+        onclick: () => majVue({ nom: 'argent', mode, ancre: decalerPeriode(mode, ancre, 1) }),
+      }, svg(ICONES.chevron)),
+    ),
+  ));
+
+  if (!evs.length) {
+    frag.append(h('div', { class: 'vide' },
+      h('div', { class: 'vide__trait', style: { background: 'var(--reglure)' } }),
+      h('h2', null, 'Rien dépensé sur cette période.'),
+      h('p', null, 'Changez de période, ou allez vivre quelque chose.')));
+    ajouter(frag, sectionResteAAcheter());
+    return frag;
+  }
+
+  /* --- le chiffre : une seule fois, en sans, chiffres proportionnels ----- */
+  const devises = repartir(evs, (e) => e.devise || 'EUR');
+  frag.append(h('div', { class: 'argent__hero' },
+    h('div', { class: 'hero' }, formatEuros(total)),
+    h('div', { class: 'hero__sous' },
+      evs.length + (evs.length > 1 ? ' entrées' : ' entrée'),
+      joursEcoules > 1 ? ', soit ' + formatEuros(moyenne) + ' par jour' : ''),
+  ));
+
+  /* --- rythme : une série, une teinte, pas de légende -------------------- */
+  const seaux = bucketsRythme(du, au, evs);
+  if (seaux) {
+    const max = Math.max(...seaux.map((s) => s.euros), 1);
+    const pointe = seaux.reduce((a, b) => (b.euros > a.euros ? b : a));
+    frag.append(h('section', { class: 'bloc' },
+      h('h3', { class: 'bloc__titre' }, 'Rythme'),
+      h('div', { class: 'rythme', role: 'group', 'aria-label': 'Dépenses par période' },
+        seaux.map((s) => h('button', {
+          class: 'rythme__col',
+          'aria-label': libellePeriode(s.mode, s.du, s.au) + ' : ' + formatEuros(s.euros),
+          onclick: () => majVue({ nom: 'argent', mode: s.mode, ancre: s.ancre }),
+        },
+          h('div', {
+            class: 'rythme__barre' + (s.euros ? '' : ' rythme__barre--zero'),
+            style: { height: Math.max(s.euros ? 3 : 1, Math.round((s.euros / max) * 100)) + '%' },
+          }))),
+      ),
+      h('div', { class: 'rythme__axe', 'aria-hidden': 'true' },
+        seaux.map((s) => h('span', null, s.etiquette))),
+      // Étiquetage sélectif : la pointe, pas un chiffre sur chaque barre.
+      h('div', { class: 'bloc__note' },
+        'Plus forte période : ' + formatEuros(pointe.euros) + ' — '
+        + libellePeriode(pointe.mode, pointe.du, pointe.au)
+        + '. Touchez une barre pour l’ouvrir.'),
+    ));
+  }
+
+  /* --- répartitions : le libellé porte l'identité, la teinte est unique -- */
+  ajouter(frag, blocRepartition('Par catégorie', repartir(evs, (e) => e.categorie), total, 'sans catégorie'));
+
+  const parPays = repartir(evs, (e) => (lieuDe(e) || {}).pays);
+  if (parPays.length > 1) ajouter(frag, blocRepartition('Par pays', parPays, total, 'pays non renseigné'));
+
+  const parVille = repartir(evs, (e) => (lieuDe(e) || {}).ville);
+  if (parVille.length > 1) ajouter(frag, blocRepartition('Par ville', parVille, total, 'ville non renseignée'));
+
+  /* --- devises : le montant d'origine d'abord --------------------------- */
+  if (devises.length > 1 || (devises[0] && devises[0].cle !== 'EUR')) {
+    frag.append(h('section', { class: 'bloc' },
+      h('h3', { class: 'bloc__titre' }, 'Par devise'),
+      devises.map((d) => {
+        const brut = evs.filter((e) => (e.devise || 'EUR') === d.cle)
+          .reduce((s, e) => s + e.montant, 0);
+        return h('div', { class: 'part' },
+          h('div', { class: 'part__haut' },
+            h('span', { class: 'part__nom' }, formatMontant(brut, d.cle)),
+            h('span', { class: 'part__valeur' }, d.cle === 'EUR' ? '' : formatEuros(d.euros))),
+          h('div', { class: 'part__note' }, d.n + (d.n > 1 ? ' entrées' : ' entrée')));
+      }),
+      h('div', { class: 'bloc__note' },
+        'Chaque montant est converti au taux du jour où vous l’avez noté. Les totaux passés ne bougent jamais.'),
+    ));
+  }
+
+  /* --- par personne ------------------------------------------------------ */
+  const parPersonne = repartir(evs.filter((e) => e.beneficiaire), (e) => e.beneficiaire);
+  if (parPersonne.length) {
+    frag.append(h('section', { class: 'bloc' },
+      h('h3', { class: 'bloc__titre' }, 'Pour qui'),
+      parPersonne.map((p) => h('button', {
+        class: 'part part--lien',
+        onclick: () => {
+          etat.filtres = videsFiltres();
+          etat.filtres.beneficiaire = p.cle;
+          naviguer({ nom: 'journal' });
+        },
+      },
+        h('div', { class: 'part__haut' },
+          h('span', { class: 'part__nom' }, p.cle),
+          h('span', { class: 'part__valeur' }, formatEuros(p.euros))),
+        h('div', { class: 'part__note' }, p.n + (p.n > 1 ? ' cadeaux' : ' cadeau') + ' — voir dans le journal'))),
+      h('div', { class: 'bloc__note' },
+        'Ces montants sont bien comptés dans le total ci-dessus : un cadeau reste une dépense.'),
+    ));
+  }
+
+  ajouter(frag, sectionResteAAcheter());
+  ajouter(frag, sectionBudget());
+
+  if (mode === 'jour') {
+    frag.append(h('div', { style: { padding: '1.2rem 1rem 0' } },
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => {
+          etat.filtres = videsFiltres();
+          etat.filtres.du = du;
+          etat.filtres.au = au;
+          naviguer({ nom: 'journal' });
+        },
+      }, 'Voir cette journée dans le journal')));
+  }
+  return frag;
+}
+
+/** Une répartition = des lignes de carnet, une barre fine, une seule teinte. */
+function blocRepartition(titre, lignes, total, libelleVide) {
+  if (!lignes.length) return null;
+  return h('section', { class: 'bloc' },
+    h('h3', { class: 'bloc__titre' }, titre),
+    lignes.map((l) => h('div', { class: 'part' },
+      h('div', { class: 'part__haut' },
+        h('span', { class: 'part__nom' + (l.cle ? '' : ' part__nom--vide') }, l.cle || libelleVide),
+        h('span', { class: 'part__valeur' }, formatEuros(l.euros))),
+      h('div', { class: 'part__piste' },
+        h('div', {
+          class: 'part__fill',
+          style: { width: (total ? Math.max(1, (l.euros / total) * 100) : 0) + '%' },
+        })),
+    )),
+  );
+}
+
+/** Les idées d'achat : jamais dans les totaux, toujours visibles. */
+function sectionResteAAcheter() {
+  const idees = evenementsVivants().filter(estIdee);
+  if (!idees.length) return null;
+
+  const parPersonne = new Map();
+  for (const ev of idees) {
+    const k = ev.beneficiaire || '';
+    if (!parPersonne.has(k)) parPersonne.set(k, []);
+    parPersonne.get(k).push(ev);
+  }
+  const totalEstime = idees.reduce((s, e) => s + enEuros(e), 0);
+
+  return h('section', { class: 'bloc' },
+    h('h3', { class: 'bloc__titre' }, 'Reste à acheter'),
+    [...parPersonne.entries()].map(([qui, liste]) => h('div', { class: 'part' },
+      h('div', { class: 'part__haut' },
+        h('span', { class: 'part__nom' + (qui ? '' : ' part__nom--vide') }, qui || 'pour moi'),
+        h('span', { class: 'part__valeur part__valeur--prevu' },
+          formatEuros(liste.reduce((s, e) => s + enEuros(e), 0)))),
+      h('div', { class: 'part__idees' }, liste.map((ev) => h('button', {
+        class: 'idee', onclick: () => feuilleEvenement(ev),
+      },
+        h('span', null, (lieuDe(ev) && nomLieu(lieuDe(ev))) || 'Lieu sans nom'),
+        h('span', { class: 'idee__prix' }, formatMontant(ev.montant, ev.devise)),
+      ))),
+    )),
+    h('div', { class: 'bloc__note' },
+      'Estimé à ' + formatEuros(totalEstime)
+      + '. Ces montants ne sont comptés nulle part tant que l’achat n’est pas fait —'
+      + ' passez l’entrée en « acheté » pour qu’elle rejoigne vos dépenses.'),
+  );
+}
+
+/* -------------------------------------------------------------- budget ---- */
+
+function sectionBudget() {
+  const b = etat.prefs.budget;
+  if (!b || !(b.montant > 0)) {
+    return h('section', { class: 'bloc' },
+      h('h3', { class: 'bloc__titre' }, 'Budget'),
+      h('div', { class: 'bloc__note', style: { marginTop: 0 } },
+        'Optionnel. Si vous en posez un, le carnet vous dira où vous en êtes — sans jamais vous faire la morale.'),
+      h('div', { style: { padding: '0.7rem 1rem 0' } },
+        h('button', { class: 'bouton bouton--calme', onclick: feuilleBudget }, 'Poser un budget')));
+  }
+
+  const ajd = isoLocal();
+  const finEcoulee = b.fin && b.fin < ajd ? b.fin : ajd;
+  const depense = evenementsVivants()
+    .filter((e) => estDepense(e) && e.date >= b.debut && e.date <= finEcoulee)
+    .reduce((s, e) => s + enEuros(e), 0);
+
+  const reste = b.montant - depense;
+  const joursEcoules = Math.max(1, nbJours(b.debut, finEcoulee < b.debut ? b.debut : finEcoulee));
+  const rythme = depense / joursEcoules;
+  const part = Math.min(100, (depense / b.montant) * 100);
+
+  // Ton informatif : on décrit, on ne réprimande pas.
+  let projection;
+  if (b.fin && b.fin >= ajd) {
+    const joursRestants = Math.max(1, nbJours(ajd, b.fin));
+    projection = reste >= 0
+      ? 'Il reste ' + formatEuros(reste) + ' pour ' + joursRestants
+        + (joursRestants > 1 ? ' jours' : ' jour') + ', soit ' + formatEuros(reste / joursRestants) + ' par jour.'
+      : 'Le budget est dépassé de ' + formatEuros(-reste) + ', à ' + joursRestants
+        + (joursRestants > 1 ? ' jours' : ' jour') + ' de la fin.';
+  } else if (reste >= 0 && rythme > 0) {
+    projection = 'À ce rythme, le budget tient jusqu’au '
+      + formatDateCourte(decalerJours(ajd, Math.floor(reste / rythme))) + '.';
+  } else if (reste >= 0) {
+    projection = 'Il reste ' + formatEuros(reste) + '.';
+  } else {
+    projection = 'Le budget est dépassé de ' + formatEuros(-reste) + '.';
+  }
+
+  return h('section', { class: 'bloc' },
+    h('h3', { class: 'bloc__titre' }, 'Budget'),
+    h('div', { class: 'part' },
+      h('div', { class: 'part__haut' },
+        h('span', { class: 'part__nom' }, formatEuros(depense) + ' sur ' + formatEuros(b.montant)),
+        h('span', { class: 'part__valeur' }, Math.round(part) + ' %')),
+      h('div', { class: 'jauge' },
+        h('div', { class: 'jauge__fill', style: { width: part + '%' } })),
+      h('div', { class: 'part__note' },
+        'Depuis le ' + formatDateCourte(b.debut)
+        + ' — ' + formatEuros(rythme) + ' par jour en moyenne'),
+    ),
+    h('div', { class: 'bloc__note' }, projection),
+    h('div', { style: { padding: '0.7rem 1rem 0' } },
+      h('button', { class: 'bouton bouton--calme', onclick: feuilleBudget }, 'Modifier le budget')),
+  );
+}
+
+function feuilleBudget() {
+  const b = etat.prefs.budget || {};
+  let champMontant, champDebut, champFin;
+
+  // Par défaut, le budget démarre au premier jour noté dans le carnet.
+  const dates = evenementsVivants().map((e) => e.date).sort();
+  const debutParDefaut = b.debut || dates[0] || isoLocal();
+
+  ouvrirFeuille({
+    titre: 'Budget',
+    labelValider: 'Enregistrer',
+    corps: (f) => {
+      champMontant = h('input', {
+        type: 'text', inputmode: 'decimal',
+        value: b.montant ? String(b.montant) : '',
+        style: { fontFamily: 'var(--police-chiffres)', textAlign: 'right' },
+      });
+      champDebut = h('input', { type: 'date', value: debutParDefaut });
+      champFin = h('input', { type: 'date', value: b.fin || '' });
+      return h('div', null,
+        h('div', { class: 'champ' },
+          h('label', null, 'Montant prévu, en euros'), champMontant),
+        h('div', { class: 'champ' },
+          h('label', null, 'Depuis le'), champDebut),
+        h('div', { class: 'champ' },
+          h('label', null, 'Jusqu’au (facultatif)'), champFin,
+          h('div', { class: 'aide' },
+            'Avec une date de fin, le carnet vous dit combien vous pouvez dépenser par jour. Sans elle, il vous dit jusqu’à quand le budget tient au rythme actuel.')),
+        b.montant ? h('button', {
+          class: 'bouton bouton--danger', type: 'button',
+          onclick: async () => {
+            await ecrirePref('budget', null);
+            f.fermer(false, rendre);
+          },
+        }, 'Retirer le budget') : null,
+        h('p', { class: 'note-info' },
+          'Le budget n’est qu’un repère. Il ne bloque rien et ne change aucune de vos entrées.'),
+      );
+    },
+    valider: async () => {
+      const m = nombre(champMontant.value);
+      if (!isFinite(m) || m <= 0) { toast('Indiquez un montant supérieur à zéro.'); return false; }
+      if (champFin.value && champFin.value < champDebut.value) {
+        toast('La date de fin tombe avant le début.');
+        return false;
+      }
+      await ecrirePref('budget', {
+        montant: m,
+        debut: champDebut.value || debutParDefaut,
+        fin: champFin.value || '',
+      });
+      return rendre;
+    },
+  });
 }
 
 /* ----------------------------------------------------------- corbeille ---- */
@@ -1547,6 +2120,12 @@ function feuilleMenu() {
   const f = ouvrirFeuille({
     titre: 'Carnet',
     corps: () => h('div', null,
+      h('button', {
+        class: 'bouton',
+        onclick: () => f.fermer(false, () => naviguer({
+          nom: 'argent', mode: 'semaine', ancre: isoLocal(),
+        })),
+      }, 'Argent'),
       h('button', {
         class: 'bouton bouton--calme',
         onclick: () => f.fermer(false, () => naviguer({ nom: 'corbeille' })),
@@ -2811,6 +3390,17 @@ function naviguer(vue) {
   etat.vue = vue;
   history.pushState({ vue }, '');
   window.scrollTo(0, 0);
+  rendre();
+}
+
+/**
+ * Changement d'état à l'intérieur d'un même écran (changer de période dans
+ * Argent, par exemple). On remplace l'entrée d'historique au lieu d'en empiler
+ * une : le bouton retour ramène là d'où on vient, pas dix semaines en arrière.
+ */
+function majVue(vue) {
+  etat.vue = vue;
+  history.replaceState({ vue }, '');
   rendre();
 }
 
