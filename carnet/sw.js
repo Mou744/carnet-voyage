@@ -13,7 +13,7 @@
 // Incrémenter cette version publie une mise à jour de l'app.
 // À garder identique à VERSION_APP dans voyage.html : c'est la comparaison
 // des deux qui permet de dire honnêtement « une nouvelle version est prête ».
-const VERSION = 'carnet-v7';
+const VERSION = 'carnet-v8';
 
 const FICHIERS = [
   './voyage.html',

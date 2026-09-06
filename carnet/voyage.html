@@ -2682,10 +2682,10 @@ function versBase64(octets) {
 }
 const blobEnBase64 = async (blob) => versBase64(new Uint8Array(await blob.arrayBuffer()));
 
-async function apiGitHub(cfg, chemin, methode, corps) {
-  const base = 'https://api.github.com/repos/' + encodeURIComponent(cfg.proprietaire)
-    + '/' + encodeURIComponent(cfg.depot) + '/contents/' + chemin;
-  const url = methode === 'GET' ? base + '?ref=' + encodeURIComponent(cfg.branche || 'main') : base;
+/** Appel générique sur le dépôt. Lève toujours si GitHub n'est pas content. */
+async function appelGitHub(cfg, sousChemin, methode, corps) {
+  const url = 'https://api.github.com/repos/' + encodeURIComponent(cfg.proprietaire)
+    + '/' + encodeURIComponent(cfg.depot) + sousChemin;
 
   const r = await fetch(url, {
     method: methode,
@@ -2697,7 +2697,6 @@ async function apiGitHub(cfg, chemin, methode, corps) {
     body: corps ? JSON.stringify(corps) : undefined,
   });
 
-  if (r.status === 404 && methode === 'GET') return null;   // le fichier n'existe pas encore
   if (!r.ok) {
     const detail = await r.text().catch(() => '');
     const e = new Error('github-' + r.status);
@@ -2708,16 +2707,103 @@ async function apiGitHub(cfg, chemin, methode, corps) {
   return r.status === 204 ? null : r.json();
 }
 
+async function apiGitHub(cfg, chemin, methode, corps) {
+  const sous = '/contents/' + chemin
+    + (methode === 'GET' ? '?ref=' + encodeURIComponent(cfg.branche || 'main') : '');
+  try {
+    return await appelGitHub(cfg, sous, methode, corps);
+  } catch (e) {
+    // Sur une lecture, un 404 veut dire « ce fichier n'existe pas encore ».
+    if (e.statut === 404 && methode === 'GET') return null;
+    throw e;
+  }
+}
+
 function messageErreurGitHub(err) {
   if (err && (err.statut === 401 || err.statut === 403)) {
-    return 'GitHub refuse le jeton. Vérifiez qu’il n’a pas expiré et qu’il a le droit « Contents : lecture et écriture » sur ce dépôt.';
+    return 'GitHub refuse le jeton : il a expiré, ou il a été révoqué. Créez-en un nouveau.';
   }
   if (err && err.statut === 404) {
-    return 'Dépôt ou branche introuvable. Vérifiez le propriétaire, le nom du dépôt et la branche.';
+    // GitHub renvoie 404 — et non 403 — quand un jeton n'a pas accès à un
+    // dépôt : impossible de distinguer « inexistant » de « interdit ».
+    return 'Dépôt introuvable — ou, bien plus souvent, le jeton n’y a pas accès. '
+      + 'Sur GitHub, vérifiez que le jeton liste ce dépôt et qu’il a « Contents : Read and write ».';
   }
   if (err && err.statut === 409) return 'Le dépôt a changé entre-temps. Relancez la publication.';
   if (err && err.statut === 422) return 'GitHub a refusé le contenu. Relancez la publication.';
   return 'Publication interrompue : pas de réseau, ou GitHub injoignable. Rien n’est perdu, réessayez plus tard.';
+}
+
+/**
+ * Diagnostic honnête de la connexion : on interroge le dépôt lui-même, puis
+ * le droit d'écriture, puis la branche. L'ancien test lisait un fichier
+ * absent, dont le 404 était traité comme un succès — il annonçait « connexion
+ * établie » à un jeton qui ne voyait rien.
+ */
+async function diagnostiquerGitHub(cfg) {
+  if (!cfg.proprietaire || !cfg.depot) return { ok: false, message: 'Indiquez le propriétaire et le nom du dépôt.' };
+  if (!cfg.token) return { ok: false, message: 'Collez le jeton d’accès.' };
+  if (navigator.onLine === false) return { ok: false, message: 'Pas de réseau : impossible de vérifier maintenant.' };
+
+  let depot;
+  try {
+    depot = await appelGitHub(cfg, '', 'GET');
+  } catch (e) {
+    return { ok: false, message: messageErreurGitHub(e) };
+  }
+
+  if (depot && depot.permissions && depot.permissions.push === false) {
+    return {
+      ok: false,
+      message: 'Le jeton voit ' + depot.full_name + ' mais ne peut pas y écrire. '
+        + 'Passez « Contents » sur « Read and write » dans les permissions du jeton.',
+    };
+  }
+
+  const branche = cfg.branche || 'main';
+  try {
+    await appelGitHub(cfg, '/branches/' + encodeURIComponent(branche), 'GET');
+  } catch (e) {
+    if (e.statut === 404) {
+      let dispo = '';
+      try {
+        const bs = await appelGitHub(cfg, '/branches', 'GET');
+        dispo = (bs || []).map((b) => b.name).join(', ');
+      } catch (_) { /* tant pis, on reste sur le message court */ }
+      return {
+        ok: false,
+        message: 'La branche « ' + branche + ' » n’existe pas'
+          + (dispo ? '. Branches disponibles : ' + dispo : '') + '.',
+      };
+    }
+    return { ok: false, message: messageErreurGitHub(e) };
+  }
+
+  return { ok: true, message: 'Connexion établie : ' + depot.full_name + ', branche ' + branche + ', écriture autorisée.' };
+}
+
+/**
+ * Rattrape les saisies naturelles : une URL complète, ou « pseudo/depot »
+ * collé dans le champ du dépôt.
+ */
+function normaliserConfigGitHub(v) {
+  let proprietaire = (v.proprietaire || '').trim();
+  let depot = (v.depot || '').trim()
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '');
+
+  if (depot.includes('/')) {
+    const bouts = depot.split('/').filter(Boolean);
+    depot = bouts.pop();
+    if (!proprietaire && bouts.length) proprietaire = bouts.pop();
+  }
+  return {
+    proprietaire: proprietaire.replace(/^https?:\/\/(www\.)?github\.com\//i, '').replace(/\/+$/, ''),
+    depot,
+    branche: (v.branche || '').trim() || 'main',
+    token: (v.token || '').trim(),
+  };
 }
 
 async function publierSurGitHub() {
@@ -2811,26 +2897,32 @@ function feuilleGitHub() {
 
       return h('div', null,
         h('div', { class: 'champ' }, h('label', null, 'Propriétaire du dépôt'), cProprio),
-        h('div', { class: 'champ' }, h('label', null, 'Nom du dépôt'), cDepot),
+        h('div', { class: 'champ' }, h('label', null, 'Nom du dépôt'), cDepot,
+          h('div', { class: 'aide' }, 'Le nom seul, sans le pseudo devant ni l’adresse complète.')),
         h('div', { class: 'champ' }, h('label', null, 'Branche'), cBranche),
         h('div', { class: 'champ' }, h('label', null, 'Jeton d’accès'), cToken,
           h('div', { class: 'aide' },
-            'Un jeton « fine-grained », limité à ce seul dépôt, avec la permission '
-            + '« Contents : Read and write ». Il reste sur ce téléphone et n’apparaît nulle part dans le code.')),
+            'Un jeton « fine-grained ». Sur GitHub, il doit lister ce dépôt dans '
+            + '« Repository access » ET avoir « Contents : Read and write » dans '
+            + '« Repository permissions ». Sans les deux, GitHub répond comme si le '
+            + 'dépôt n’existait pas. Le jeton reste sur ce téléphone et n’apparaît '
+            + 'nulle part dans le code.')),
         h('button', {
           type: 'button', class: 'bouton bouton--calme',
           onclick: async () => {
-            const essai = {
-              proprietaire: cProprio.value.trim(), depot: cDepot.value.trim(),
-              branche: cBranche.value.trim() || 'main', token: cToken.value.trim(),
-            };
-            if (!essai.proprietaire || !essai.depot || !essai.token) return toast('Remplissez les quatre champs.');
+            const essai = normaliserConfigGitHub({
+              proprietaire: cProprio.value, depot: cDepot.value,
+              branche: cBranche.value, token: cToken.value,
+            });
+            // On réécrit les champs : la correction doit être visible.
+            cProprio.value = essai.proprietaire;
+            cDepot.value = essai.depot;
+            cBranche.value = essai.branche;
+
             const t = toast('Test…', [], 0);
-            try {
-              await apiGitHub(essai, 'data.json', 'GET');
-              t.fermer();
-              toast('Connexion établie : le dépôt répond et le jeton est accepté.');
-            } catch (err) { t.fermer(); toast(messageErreurGitHub(err), [], 9000); }
+            const bilan = await diagnostiquerGitHub(essai);
+            t.fermer();
+            toast(bilan.message, [], bilan.ok ? 6000 : 12000);
           },
         }, 'Tester la connexion'),
         cfg.token ? h('button', {
@@ -2842,10 +2934,10 @@ function feuilleGitHub() {
       );
     },
     valider: async () => {
-      const v = {
-        proprietaire: cProprio.value.trim(), depot: cDepot.value.trim(),
-        branche: cBranche.value.trim() || 'main', token: cToken.value.trim(),
-      };
+      const v = normaliserConfigGitHub({
+        proprietaire: cProprio.value, depot: cDepot.value,
+        branche: cBranche.value, token: cToken.value,
+      });
       if (!v.proprietaire || !v.depot) { toast('Le propriétaire et le dépôt sont nécessaires.'); return false; }
       await ecrirePref('github', v);
       return rendre;
@@ -4544,7 +4636,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v7';
+const VERSION_APP = 'carnet-v8';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.
