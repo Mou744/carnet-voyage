@@ -1122,6 +1122,7 @@ function rendre() {
     journal: vueJournal,
     lieu: vueLieu,
     argent: vueArgent,
+    partage: vuePartage,
     corbeille: vueCorbeille,
     reglages: vueReglages,
   };
@@ -1142,7 +1143,7 @@ function rendreEntete() {
   e.textContent = '';
 
   if (etat.vue.nom !== 'journal') {
-    const titres = { lieu: 'Lieu', argent: 'Argent', corbeille: 'Corbeille', reglages: 'Réglages' };
+    const titres = { lieu: 'Lieu', argent: 'Argent', partage: 'Partage', corbeille: 'Corbeille', reglages: 'Réglages' };
     e.append(
       h('button', { class: 'retour', onclick: () => history.back() },
         svg(ICONES.fleche), 'Carnet'),
@@ -1882,6 +1883,628 @@ function feuilleBudget() {
   });
 }
 
+/* ==========================================================================
+   LIRE UN TICKET (phase 3, confort de saisie)
+
+   Le téléphone sait déjà lire un ticket : Live Text sur iOS, Lens sur Android.
+   Plutôt que d'embarquer un moteur OCR de vingt mégaoctets, on récupère le
+   texte que le système a reconnu et on en extrait le montant. Hors ligne,
+   sans dépendance, et avec la précision de l'OS.
+   ========================================================================== */
+
+const SYMBOLES_DEVISE = {
+  '€': 'EUR', '£': 'GBP', '¥': 'JPY', '₩': 'KRW', '₫': 'VND',
+  '฿': 'THB', '₹': 'INR', '₺': 'TRY', '円': 'JPY', 'CHF': 'CHF', '$': 'USD',
+};
+
+/**
+ * Lit un nombre écrit dans n'importe quelle convention de séparateurs.
+ * « 3 200 », « 3,200 », « 1.234,56 » et « 24,90 » doivent tous tomber juste.
+ */
+function lireNombreLibre(brut) {
+  const s = String(brut).replace(/[\s  ']/g, '');
+  const virgule = s.lastIndexOf(',');
+  const point = s.lastIndexOf('.');
+
+  if (virgule > -1 && point > -1) {
+    // Le séparateur décimal est le dernier des deux ; l'autre sépare les milliers.
+    return virgule > point
+      ? parseFloat(s.replace(/\./g, '').replace(',', '.'))
+      : parseFloat(s.replace(/,/g, ''));
+  }
+  if (virgule > -1) {
+    // Trois chiffres après la virgule : ce sont des milliers, pas des centimes.
+    return s.length - virgule - 1 === 3
+      ? parseFloat(s.replace(/,/g, ''))
+      : parseFloat(s.replace(',', '.'));
+  }
+  if (point > -1) {
+    return s.length - point - 1 === 3 ? parseFloat(s.replace(/\./g, '')) : parseFloat(s);
+  }
+  return parseFloat(s);
+}
+
+/** Extrait un montant et, si possible, une devise d'un texte de ticket. */
+function analyserTicket(texte) {
+  if (!texte || !texte.trim()) return null;
+
+  let devise = null;
+  const iso = texte.toUpperCase().match(
+    /\b(EUR|USD|GBP|CHF|JPY|THB|VND|IDR|INR|KRW|CNY|MAD|TRY|CAD|AUD|MXN|BRL|ZAR|SEK|NOK|DKK|PLN|CZK|HUF)\b/);
+  if (iso) devise = iso[1];
+  else for (const [sym, code] of Object.entries(SYMBOLES_DEVISE)) {
+    if (texte.includes(sym)) { devise = code; break; }
+  }
+
+  /*
+    Un nombre, c'est soit des groupes de trois séparés par une espace
+    (« 3 200 »), soit une suite de chiffres avec des points ou des virgules
+    (« 1.234,56 »). Autoriser n'importe quelle espace ferait fusionner deux
+    montants de deux lignes voisines en un seul nombre faux.
+  */
+  const MOTIF_NOMBRE = /\d{1,3}(?:[   ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d+)*/g;
+
+  // Dates et heures écartées : sur un ticket sans mot-clé, « 2026 » gagnerait.
+  const sansDatesNiHeures = (s) => s
+    .replace(/\d{1,4}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{1,4}/g, ' ')
+    .replace(/\d{1,2}\s*:\s*\d{2}(?:\s*:\s*\d{2})?/g, ' ');
+
+  const nombresDe = (s) => (sansDatesNiHeures(s).match(MOTIF_NOMBRE) || []);
+  const MOTS_TOTAL = /(total|montant|somme|à\s*payer|a\s*payer|net\s*à|ttc|合\s*計|総\s*計|합\s*계|amount|sum)/i;
+
+  // 1) La ligne qui annonce un total, en partant de la fin : sur un ticket,
+  //    le vrai total est le dernier (« Total HT » précède « Total TTC »).
+  const lignes = texte.split(/[\n\r]+/);
+  for (let l = lignes.length - 1; l >= 0; l--) {
+    if (!MOTS_TOTAL.test(lignes[l])) continue;
+    const n = nombresDe(lignes[l]);
+    for (let i = n.length - 1; i >= 0; i--) {
+      const v = lireNombreLibre(n[i]);
+      if (isFinite(v) && v > 0) return { montant: v, devise, sur: 'un total' };
+    }
+  }
+
+  // 2) Sinon, le plus gros nombre plausible du ticket, ligne par ligne.
+  let max = null;
+  for (const s of lignes.flatMap(nombresDe)) {
+    const v = lireNombreLibre(s);
+    if (isFinite(v) && v > 0 && v < 1e9 && (max === null || v > max)) max = v;
+  }
+  return max === null ? null : { montant: max, devise, sur: 'le plus gros montant' };
+}
+
+/**
+ * Bouton « Coller » : lit le presse-papier, sinon ouvre un champ où déposer
+ * le texte à la main (certains navigateurs refusent la lecture directe).
+ */
+function boutonCollerTicket(appliquer) {
+  const traiter = (texte) => {
+    const trouve = analyserTicket(texte);
+    if (!trouve) { toast('Aucun montant reconnu dans ce texte.'); return false; }
+    appliquer(trouve);
+    toast('Montant repris depuis ' + trouve.sur + '. Vérifiez-le.');
+    return true;
+  };
+
+  return h('button', {
+    type: 'button', class: 'bouton bouton--calme', style: { marginTop: '0.5rem' },
+    onclick: async () => {
+      let texte = null;
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          texte = await navigator.clipboard.readText();
+        }
+      } catch (_) { /* refus ou navigateur récalcitrant : on passe au champ manuel */ }
+
+      if (texte && traiter(texte)) return;
+
+      let zone;
+      ouvrirFeuille({
+        titre: 'Coller le ticket',
+        labelValider: 'Lire le montant',
+        corps: () => {
+          zone = h('textarea', { placeholder: 'Collez ici le texte du ticket…' });
+          if (texte) zone.value = texte;
+          setTimeout(() => zone.focus(), 60);
+          return h('div', null,
+            h('p', { class: 'note-info', style: { marginTop: 0 } },
+              'Sur la photo du ticket, sélectionnez le total avec la reconnaissance de texte du téléphone '
+              + '(appui long sur iOS, Lens sur Android), copiez, puis collez ici.'),
+            h('div', { class: 'champ' }, zone));
+        },
+        valider: () => (traiter(zone.value) ? true : false),
+      });
+    },
+  }, 'Coller un ticket');
+}
+
+/* ==========================================================================
+   PARTAGE (phase 3)
+
+   Sans backend, sans compte, sans serveur. L'app fabrique un data.json allégé
+   et dépose les vignettes ; un viewer statique, déployé une seule fois, les
+   lit. L'adresse ne change jamais.
+
+   Choix par défaut : ni les montants, ni les coordonnées précises ne sortent.
+   Les idées de cadeaux non plus — on ne divulgue pas une surprise. Et les
+   bénéficiaires ne quittent jamais le téléphone.
+   ========================================================================== */
+
+const optionsPartage = () => Object.assign(
+  { montants: false, gps: false }, etat.prefs.partage_options || {});
+
+/** Rassemble les vignettes d'une liste de références, sans doublon. */
+async function collecterVignettes(refs, sac) {
+  const sortie = [];
+  for (const ref of refs || []) {
+    const id = ref.id || ref;
+    if (sac.has(id)) { sortie.push(sac.get(id).meta); continue; }
+    const rec = await lire('photos', id).catch(() => null);
+    if (!rec) continue;
+    const blob = rec.vignette || rec.blob;
+    if (!blob) continue;
+    const meta = {
+      f: id + (blob.type === 'image/webp' ? '.webp' : '.jpg'),
+      l: ref.l || rec.largeur || null,
+      h: ref.h || rec.hauteur || null,
+    };
+    sac.set(id, { meta, blob });
+    sortie.push(meta);
+  }
+  return sortie;
+}
+
+async function construireExport() {
+  const opts = optionsPartage();
+  const partages = lieuxVivants().filter((l) => l.partage);
+  const sac = new Map();
+  const lieux = [];
+
+  for (const l of partages) {
+    const evs = evenementsVivants()
+      .filter((e) => e.lieu_id === l.id && !estIdee(e))   // une surprise reste une surprise
+      .sort((a, b) => (a.date + (a.heure || '')) < (b.date + (b.heure || '')) ? -1 : 1);
+
+    const evenements = [];
+    for (const ev of evs) {
+      const entree = {
+        date: ev.date,
+        heure: ev.heure || '',
+        type: ev.type,
+        commentaire: ev.commentaire || '',
+        photos: await collecterVignettes(ev.photos, sac),
+      };
+      if (opts.montants && aUnMontant(ev)) {
+        entree.montant = ev.montant;
+        entree.devise = ev.devise;
+        entree.euros = Math.round(enEuros(ev) * 100) / 100;
+      }
+      // Une entrée sans photo, sans mot et sans montant n'a rien à raconter.
+      if (entree.photos.length || entree.commentaire || entree.montant) evenements.push(entree);
+    }
+
+    const fiche = {
+      id: l.id,
+      nom: l.nom || '',
+      type: l.type || '',
+      ville: l.ville || '',
+      pays: l.pays || '',
+      note: l.note || 0,
+      commentaire: l.commentaire || '',
+      tags: l.tags || [],
+      photos: await collecterVignettes(l.photos, sac),
+      evenements,
+    };
+    if (opts.gps && isFinite(l.latitude)) {
+      fiche.latitude = l.latitude;
+      fiche.longitude = l.longitude;
+    }
+    lieux.push(fiche);
+  }
+
+  const dates = lieux.flatMap((l) => l.evenements.map((e) => e.date)).sort();
+  const data = {
+    version: 1,
+    genere_le: new Date().toISOString(),
+    titre: 'Carnet de voyage',
+    options: { montants: opts.montants, gps: opts.gps },
+    stats: {
+      lieux: lieux.length,
+      villes: new Set(lieux.map((l) => l.ville).filter(Boolean)).size,
+      pays: new Set(lieux.map((l) => l.pays).filter(Boolean)).size,
+      photos: sac.size,
+      premier_jour: dates[0] || null,
+      dernier_jour: dates[dates.length - 1] || null,
+      jours: dates.length ? nbJours(dates[0], dates[dates.length - 1]) : 0,
+    },
+    lieux,
+  };
+
+  return {
+    json: JSON.stringify(data, null, 1),
+    photos: [...sac.values()].map((v) => ({ nom: v.meta.f, blob: v.blob })),
+  };
+}
+
+/* ------------------------------------------------------------ écran ------- */
+
+function vuePartage() {
+  const frag = document.createDocumentFragment();
+  const opts = optionsPartage();
+  const cfg = etat.prefs.github || {};
+  const lieux = lieuxVivants().sort((a, b) =>
+    (nomLieu(a) || 'zzz').localeCompare(nomLieu(b) || 'zzz', 'fr'));
+  const coches = lieux.filter((l) => l.partage);
+
+  const url = (cfg.proprietaire && cfg.depot)
+    ? 'https://' + cfg.proprietaire.toLowerCase() + '.github.io/' + cfg.depot + '/'
+    : null;
+
+  frag.append(h('p', { class: 'note-info', style: { margin: '1rem' } },
+    'Vous cochez ce qui peut sortir ; le reste ne quitte jamais le téléphone. '
+    + 'La page de votre famille garde toujours la même adresse — seules les données y sont remplacées.'));
+
+  if (url) {
+    frag.append(h('div', { class: 'sous-titre' }, 'Adresse de la page'),
+      h('div', { style: { padding: '0 1rem' } },
+        h('a', {
+          href: url, target: '_blank', rel: 'noopener',
+          style: { color: 'var(--bille)', wordBreak: 'break-all', fontSize: '0.88rem' },
+        }, url)));
+  }
+
+  /* --- ce qui sort --- */
+  frag.append(h('div', { class: 'sous-titre' }, 'Ce qui est partagé'));
+  frag.append(bascule('Les montants dépensés', opts.montants,
+    'Sans cela, votre famille voit les lieux et les photos, jamais l’argent.',
+    async (v) => { await ecrirePref('partage_options', { ...opts, montants: v }); rendre(); }));
+  frag.append(bascule('La position précise', opts.gps,
+    'Par défaut, seule la ville est publiée. Les coordonnées exactes de vos nuits restent ici.',
+    async (v) => { await ecrirePref('partage_options', { ...opts, gps: v }); rendre(); }));
+
+  /* --- les lieux --- */
+  frag.append(h('div', { class: 'sous-titre' },
+    coches.length + ' lieu' + (coches.length > 1 ? 'x cochés' : ' coché') + ' sur ' + lieux.length));
+
+  if (lieux.length) {
+    frag.append(h('div', { style: { padding: '0 1rem 0.6rem' } },
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => basculerTousLesLieux(coches.length !== lieux.length),
+      }, coches.length === lieux.length ? 'Tout décocher' : 'Tout cocher')));
+
+    for (const l of lieux) {
+      const n = evenementsVivants().filter((e) => e.lieu_id === l.id && !estIdee(e)).length;
+      frag.append(h('label', { class: 'rangee', style: { cursor: 'pointer' } },
+        h('input', {
+          type: 'checkbox', checked: !!l.partage,
+          style: { width: '22px', height: '22px', accentColor: 'var(--bille)', flex: '0 0 auto' },
+          onchange: (e) => basculerLieu(l, e.target.checked),
+        }),
+        (l.photos && l.photos[0]) ? imgVignette(l.photos[0], 'rangee__miniature') : null,
+        h('div', { class: 'rangee__texte' },
+          h('div', { class: 'rangee__titre' }, nomLieu(l) || 'Lieu sans nom'),
+          h('div', { class: 'rangee__sous' },
+            [l.ville, n + (n > 1 ? ' entrées' : ' entrée')].filter(Boolean).join(', '))),
+      ));
+    }
+  } else {
+    frag.append(h('p', { class: 'note-info', style: { margin: '0 1rem' } },
+      'Aucun lieu à partager pour l’instant.'));
+  }
+
+  /* --- actions --- */
+  frag.append(h('div', { class: 'sous-titre' }, 'Publier'),
+    h('div', { id: 'zone-poids', class: 'note-info', style: { margin: '0 1rem' } }, 'Calcul…'),
+    h('div', { style: { padding: '0.9rem 1rem' } },
+      h('button', {
+        class: 'bouton', disabled: !coches.length,
+        onclick: () => coches.length ? confirmerPublication() : null,
+      }, 'Publier'),
+      h('button', { class: 'bouton bouton--calme', onclick: copierDonnees }, 'Copier les données'),
+      h('button', { class: 'bouton bouton--calme', onclick: feuilleGitHub },
+        cfg.token ? 'Modifier la connexion GitHub' : 'Connecter GitHub')),
+  );
+
+  decrirePoids();
+  return frag;
+}
+
+function bascule(titre, valeur, aide, onchange) {
+  return h('label', { class: 'rangee', style: { cursor: 'pointer' } },
+    h('input', {
+      type: 'checkbox', checked: valeur,
+      style: { width: '22px', height: '22px', accentColor: 'var(--bille)', flex: '0 0 auto' },
+      onchange: (e) => onchange(e.target.checked),
+    }),
+    h('div', { class: 'rangee__texte' },
+      h('div', { class: 'rangee__titre' }, titre),
+      h('div', { class: 'rangee__sous' }, aide)),
+  );
+}
+
+async function basculerLieu(lieu, valeur) {
+  const maj = { ...lieu, partage: valeur };
+  try {
+    await ecrire('lieux', (s) => s.lieux.put(maj));
+    etat.lieux.set(lieu.id, maj);
+    rendre();
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+async function basculerTousLesLieux(valeur) {
+  const liste = lieuxVivants().map((l) => ({ ...l, partage: valeur }));
+  try {
+    await ecrire('lieux', (s) => { for (const l of liste) s.lieux.put(l); });
+    for (const l of liste) etat.lieux.set(l.id, l);
+    rendre();
+  } catch (err) { toast(messageErreurEcriture(err)); }
+}
+
+async function decrirePoids() {
+  const zone = $('#zone-poids');
+  if (!zone) return;
+  try {
+    const paquet = await construireExport();
+    const octets = paquet.photos.reduce((s, p) => s + p.blob.size, 0);
+    if (!$('#zone-poids')) return;
+    $('#zone-poids').textContent =
+      Math.round(paquet.json.length / 1024) + ' Ko de texte et '
+      + paquet.photos.length + (paquet.photos.length > 1 ? ' vignettes' : ' vignette')
+      + ' (' + (octets / 1048576).toFixed(1) + ' Mo).';
+  } catch (_) {
+    if ($('#zone-poids')) $('#zone-poids').textContent = 'Estimation indisponible.';
+  }
+}
+
+/* --------------------------------------------------- copier les données ---- */
+
+async function copierDonnees() {
+  const t = toast('Préparation…', [], 0);
+  try {
+    const paquet = await construireExport();
+    t.fermer();
+    let copie = false;
+    try {
+      await navigator.clipboard.writeText(paquet.json);
+      copie = true;
+    } catch (_) { /* refus du navigateur : on affiche le texte à copier à la main */ }
+
+    const cfg = etat.prefs.github || {};
+    const lien = (cfg.proprietaire && cfg.depot)
+      ? 'https://github.com/' + cfg.proprietaire + '/' + cfg.depot
+        + '/edit/' + (cfg.branche || 'main') + '/data.json'
+      : null;
+
+    ouvrirFeuille({
+      titre: copie ? 'Données copiées' : 'Données à copier',
+      corps: () => h('div', null,
+        h('p', { class: 'note-info', style: { marginTop: 0 } },
+          copie
+            ? 'Le contenu de data.json est dans votre presse-papier. Ouvrez le fichier sur GitHub, remplacez tout, enregistrez.'
+            : 'Sélectionnez tout le texte ci-dessous et copiez-le, puis remplacez data.json sur GitHub.'),
+        copie ? null : h('div', { class: 'champ' },
+          h('textarea', { style: { minHeight: '9rem', fontFamily: 'var(--police-chiffres)', fontSize: '0.72rem' }, value: paquet.json })),
+        lien ? h('a', { class: 'bouton', href: lien, target: '_blank', rel: 'noopener', style: { textDecoration: 'none' } },
+          'Ouvrir data.json sur GitHub') : null,
+        h('p', { class: 'note-info' },
+          'Cette méthode ne transporte que le texte. Les '
+          + paquet.photos.length + ' vignettes, elles, passent par le bouton « Publier ».'),
+      ),
+    });
+  } catch (err) {
+    t.fermer();
+    console.error(err);
+    toast('La préparation des données a échoué.');
+  }
+}
+
+/* ------------------------------------------------------- publication ------- */
+
+function confirmerPublication() {
+  const opts = optionsPartage();
+  const n = lieuxVivants().filter((l) => l.partage).length;
+
+  ouvrirFeuille({
+    titre: 'Publier',
+    labelValider: 'Publier',
+    corps: () => h('div', null,
+      h('p', { style: { marginTop: 0, fontFamily: 'var(--police-texte)', fontSize: '1.02rem' } },
+        n + (n > 1 ? ' lieux vont être publiés' : ' lieu va être publié')
+        + (opts.montants ? ', avec les montants' : ', sans les montants')
+        + (opts.gps ? ' et avec la position précise' : ' et sans la position précise') + '.'),
+      // La phrase demandée par le brief : le compromis, sans alarmisme.
+      h('p', { class: 'note-info' },
+        'Une adresse difficile à deviner n’est pas une adresse privée : ce qui part ici est lisible par qui connaît le lien.'),
+      h('p', { class: 'note-info' },
+        'Vos idées de cadeaux et les noms des personnes à qui vous offrez ne sont jamais publiés.'),
+    ),
+    valider: () => { publierSurGitHub(); return true; },
+  });
+}
+
+/* Encodage base64 sans dépassement de pile sur les gros tableaux. */
+function versBase64(octets) {
+  let s = '';
+  const PAS = 0x8000;
+  for (let i = 0; i < octets.length; i += PAS) {
+    s += String.fromCharCode.apply(null, octets.subarray(i, i + PAS));
+  }
+  return btoa(s);
+}
+const blobEnBase64 = async (blob) => versBase64(new Uint8Array(await blob.arrayBuffer()));
+
+async function apiGitHub(cfg, chemin, methode, corps) {
+  const base = 'https://api.github.com/repos/' + encodeURIComponent(cfg.proprietaire)
+    + '/' + encodeURIComponent(cfg.depot) + '/contents/' + chemin;
+  const url = methode === 'GET' ? base + '?ref=' + encodeURIComponent(cfg.branche || 'main') : base;
+
+  const r = await fetch(url, {
+    method: methode,
+    headers: {
+      Authorization: 'Bearer ' + cfg.token,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: corps ? JSON.stringify(corps) : undefined,
+  });
+
+  if (r.status === 404 && methode === 'GET') return null;   // le fichier n'existe pas encore
+  if (!r.ok) {
+    const detail = await r.text().catch(() => '');
+    const e = new Error('github-' + r.status);
+    e.statut = r.status;
+    e.detail = detail;
+    throw e;
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+function messageErreurGitHub(err) {
+  if (err && (err.statut === 401 || err.statut === 403)) {
+    return 'GitHub refuse le jeton. Vérifiez qu’il n’a pas expiré et qu’il a le droit « Contents : lecture et écriture » sur ce dépôt.';
+  }
+  if (err && err.statut === 404) {
+    return 'Dépôt ou branche introuvable. Vérifiez le propriétaire, le nom du dépôt et la branche.';
+  }
+  if (err && err.statut === 409) return 'Le dépôt a changé entre-temps. Relancez la publication.';
+  if (err && err.statut === 422) return 'GitHub a refusé le contenu. Relancez la publication.';
+  return 'Publication interrompue : pas de réseau, ou GitHub injoignable. Rien n’est perdu, réessayez plus tard.';
+}
+
+async function publierSurGitHub() {
+  const cfg = etat.prefs.github;
+  if (!cfg || !cfg.token || !cfg.proprietaire || !cfg.depot) {
+    toast('Connectez d’abord GitHub.');
+    return feuilleGitHub();
+  }
+
+  const t = toast('Préparation…', [], 0);
+  const dire = (m) => { const z = t.el.querySelector('.toast__texte'); if (z) z.textContent = m; };
+  const publie = Object.assign({ data: null, photos: {} }, etat.prefs.publie || {});
+
+  try {
+    const paquet = await construireExport();
+
+    /* --- les vignettes d'abord : le JSON ne doit jamais pointer dans le vide --- */
+    let envoyees = 0;
+    for (const p of paquet.photos) {
+      if (publie.photos[p.nom]) continue;                 // déjà en ligne
+      envoyees++;
+      dire('Envoi des photos ' + envoyees + '/'
+        + paquet.photos.filter((x) => !publie.photos[x.nom]).length + '…');
+      const rep = await apiGitHub(cfg, 'photos/' + p.nom, 'PUT', {
+        message: 'Carnet : photo ' + p.nom,
+        content: await blobEnBase64(p.blob),
+        branch: cfg.branche || 'main',
+      });
+      publie.photos[p.nom] = rep && rep.content ? rep.content.sha : true;
+      await ecrirePref('publie', publie);                 // reprise possible si ça coupe
+    }
+
+    /* --- puis data.json --- */
+    dire('Envoi des données…');
+    const existant = await apiGitHub(cfg, 'data.json', 'GET');
+    const rep = await apiGitHub(cfg, 'data.json', 'PUT', {
+      message: 'Carnet : mise à jour du ' + formatDateCourte(isoLocal()),
+      content: versBase64(new TextEncoder().encode(paquet.json)),
+      branch: cfg.branche || 'main',
+      sha: existant ? existant.sha : undefined,
+    });
+    publie.data = rep && rep.content ? rep.content.sha : null;
+
+    /* --- retirer les vignettes qui ne sont plus partagées --- */
+    const encore = new Set(paquet.photos.map((p) => p.nom));
+    const aRetirer = Object.keys(publie.photos).filter((nom) => !encore.has(nom));
+    let retirees = 0;
+    for (const nom of aRetirer) {
+      dire('Retrait des photos décochées…');
+      try {
+        const info = await apiGitHub(cfg, 'photos/' + nom, 'GET');
+        if (info && info.sha) {
+          await apiGitHub(cfg, 'photos/' + nom, 'DELETE', {
+            message: 'Carnet : retrait de ' + nom,
+            sha: info.sha,
+            branch: cfg.branche || 'main',
+          });
+          retirees++;
+        }
+      } catch (_) { /* une photo déjà absente n'est pas un échec */ }
+      delete publie.photos[nom];
+    }
+
+    await ecrirePref('publie', publie);
+    t.fermer();
+
+    const url = 'https://' + cfg.proprietaire.toLowerCase() + '.github.io/' + cfg.depot + '/';
+    toast('Publié' + (envoyees ? ' — ' + envoyees + ' photo(s) ajoutée(s)' : '')
+      + (retirees ? ', ' + retirees + ' retirée(s)' : '') + '.',
+      [{ label: 'Voir', action: () => window.open(url, '_blank', 'noopener') }], 10000);
+  } catch (err) {
+    t.fermer();
+    console.error(err);
+    await ecrirePref('publie', publie);   // on garde ce qui a réussi
+    toast(messageErreurGitHub(err), [], 9000);
+  }
+}
+
+function feuilleGitHub() {
+  const cfg = etat.prefs.github || {};
+  let cProprio, cDepot, cBranche, cToken;
+
+  ouvrirFeuille({
+    titre: 'Connexion GitHub',
+    labelValider: 'Enregistrer',
+    corps: (f) => {
+      cProprio = h('input', { type: 'text', value: cfg.proprietaire || '', placeholder: 'votre-pseudo', autocapitalize: 'none', autocomplete: 'off' });
+      cDepot = h('input', { type: 'text', value: cfg.depot || '', placeholder: 'carnet-voyage', autocapitalize: 'none', autocomplete: 'off' });
+      cBranche = h('input', { type: 'text', value: cfg.branche || 'main', autocapitalize: 'none', autocomplete: 'off' });
+      cToken = h('input', { type: 'password', value: cfg.token || '', placeholder: 'github_pat_…', autocomplete: 'off' });
+
+      return h('div', null,
+        h('div', { class: 'champ' }, h('label', null, 'Propriétaire du dépôt'), cProprio),
+        h('div', { class: 'champ' }, h('label', null, 'Nom du dépôt'), cDepot),
+        h('div', { class: 'champ' }, h('label', null, 'Branche'), cBranche),
+        h('div', { class: 'champ' }, h('label', null, 'Jeton d’accès'), cToken,
+          h('div', { class: 'aide' },
+            'Un jeton « fine-grained », limité à ce seul dépôt, avec la permission '
+            + '« Contents : Read and write ». Il reste sur ce téléphone et n’apparaît nulle part dans le code.')),
+        h('button', {
+          type: 'button', class: 'bouton bouton--calme',
+          onclick: async () => {
+            const essai = {
+              proprietaire: cProprio.value.trim(), depot: cDepot.value.trim(),
+              branche: cBranche.value.trim() || 'main', token: cToken.value.trim(),
+            };
+            if (!essai.proprietaire || !essai.depot || !essai.token) return toast('Remplissez les quatre champs.');
+            const t = toast('Test…', [], 0);
+            try {
+              await apiGitHub(essai, 'data.json', 'GET');
+              t.fermer();
+              toast('Connexion établie : le dépôt répond et le jeton est accepté.');
+            } catch (err) { t.fermer(); toast(messageErreurGitHub(err), [], 9000); }
+          },
+        }, 'Tester la connexion'),
+        cfg.token ? h('button', {
+          type: 'button', class: 'bouton bouton--danger',
+          onclick: async () => { await ecrirePref('github', null); f.fermer(false, rendre); },
+        }, 'Oublier ce jeton') : null,
+        h('p', { class: 'note-info' },
+          'Le viewer est déjà déployé à la racine du dépôt. La publication ne remplace que data.json et le dossier photos.'),
+      );
+    },
+    valider: async () => {
+      const v = {
+        proprietaire: cProprio.value.trim(), depot: cDepot.value.trim(),
+        branche: cBranche.value.trim() || 'main', token: cToken.value.trim(),
+      };
+      if (!v.proprietaire || !v.depot) { toast('Le propriétaire et le dépôt sont nécessaires.'); return false; }
+      await ecrirePref('github', v);
+      return rendre;
+    },
+  });
+}
+
 /* ----------------------------------------------------------- corbeille ---- */
 
 function vueCorbeille() {
@@ -2158,6 +2781,10 @@ function feuilleMenu() {
           nom: 'argent', mode: 'semaine', ancre: isoLocal(),
         })),
       }, 'Argent'),
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: () => f.fermer(false, () => naviguer({ nom: 'partage' })),
+      }, 'Partage'),
       h('button', {
         class: 'bouton bouton--calme',
         onclick: () => f.fermer(false, () => naviguer({ nom: 'corbeille' })),
@@ -2604,6 +3231,11 @@ function saisirMontant() {
           apercu),
         h('p', { class: 'note-info' },
           'Le lieu est déduit de votre position. Vous pourrez préciser la catégorie et le bénéficiaire ce soir.'),
+        boutonCollerTicket(({ montant, devise }) => {
+          champMontant.value = String(montant);
+          if (devise) champDevise.value = devise;
+          rafraichir();
+        }),
       );
     },
     valider: async () => {
@@ -2790,7 +3422,17 @@ function feuilleEvenement(evOrigine, options = {}) {
         h('div', { class: 'duo', style: { gridTemplateColumns: '2fr 1fr' } }, champs.montant, champs.devise),
         h('datalist', { id: 'l-devises-3' },
           [...new Set([...Object.keys(taux), ...DEVISES_COURANTES])].map((d) => h('option', { value: d }))),
-        champs.apercu));
+        champs.apercu,
+        boutonCollerTicket(({ montant, devise }) => {
+          champs.montant.value = String(montant);
+          if (devise) {
+            champs.devise.value = devise;
+            const connu = (etat.prefs.taux || {})[devise];
+            if (devise === 'EUR') champs.taux.value = '1';
+            else if (connu) champs.taux.value = String(connu);
+          }
+          majApercu();
+        })));
 
       boite.append(h('div', { class: 'champ' },
         h('label', null, '1 unité de cette devise, en euros, le jour de la dépense'),
@@ -3485,7 +4127,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v4';
+const VERSION_APP = 'carnet-v5';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.

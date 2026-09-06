@@ -3,7 +3,8 @@
 Carnet de bord personnel, hors ligne : lieux, visites, dépenses et achats.
 Application web autonome, sans build, sans dépendance externe, sans backend.
 
-**L'app :** https://mou744.github.io/carnet-voyage/carnet/voyage.html
+**L'app (pour moi) :** https://mou744.github.io/carnet-voyage/carnet/voyage.html
+**Le carnet public (pour la famille) :** https://mou744.github.io/carnet-voyage/
 
 À ouvrir sur le téléphone, puis à installer sur l'écran d'accueil (Safari →
 Partager → *Sur l'écran d'accueil* ; Chrome → menu → *Installer l'application*).
@@ -24,5 +25,6 @@ contient que le code de l'application.
 
 ## État
 
+Phase 3 — partage (viewer public, export, publication GitHub).
 Phase 2 — argent (totaux, par personne, budget).
 Phase 1 — saisie et consultation.

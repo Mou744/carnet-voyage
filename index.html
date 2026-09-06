@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carnet de voyage</title>
+<link rel="icon" href="carnet/icone-192.png">
+<meta name="theme-color" content="#EEEFF1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101215" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+
+<style>
+/* Le viewer parle la même langue visuelle que le carnet : la marge, le stylo
+   bille, les photos qui portent toute la couleur. En plus calme — on lit, on
+   ne saisit rien. */
+
+:root {
+  --papier: #EEEFF1;
+  --papier-haut: #F8F8FA;
+  --encre: #14161C;
+  --graphite: #5D626E;
+  --bille: #1F3FE0;
+  --reglure: #D6D8DE;
+
+  --police-ui: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --police-chiffres: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace;
+  --police-texte: ui-serif, "New York", "Noto Serif", Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --papier: #101215; --papier-haut: #191C21; --encre: #E9EAEE;
+    --graphite: #8B909C; --bille: #6E88FF; --reglure: #262A31;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--papier); color: var(--encre);
+  font-family: var(--police-ui); font-size: 16px; line-height: 1.45;
+}
+img { max-width: 100%; }
+:focus-visible { outline: 2px solid var(--bille); outline-offset: 2px; border-radius: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+.page { max-width: 640px; margin: 0 auto; padding: 0 0 5rem; }
+
+header.tete {
+  padding: calc(env(safe-area-inset-top) + 2.6rem) 1rem 1.6rem;
+  border-bottom: 1px solid var(--reglure);
+}
+.tete h1 {
+  font-size: 1.9rem; font-weight: 650; letter-spacing: -0.03em; margin: 0 0 .4rem;
+}
+.tete p { color: var(--graphite); font-size: .9rem; margin: 0; }
+.tete .maj { font-size: .78rem; margin-top: .8rem; }
+
+/* --- le journal, à la même grammaire que le carnet --- */
+.jour {
+  position: sticky; top: 0; z-index: 5; background: var(--papier);
+  padding: 1.4rem 1rem .35rem; border-bottom: 1px solid var(--reglure);
+  font-size: .88rem; font-weight: 600;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+}
+.jour .somme {
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  font-weight: 400; color: var(--graphite); font-size: .8rem;
+}
+
+.ligne { display: grid; grid-template-columns: 4rem minmax(0, 1fr); }
+.ligne .marge {
+  text-align: right; padding: .9rem .8rem 1.4rem 0;
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  font-size: .74rem; color: var(--graphite); line-height: 1.5;
+}
+.ligne .marge .prix { color: var(--bille); display: block; }
+.ligne .corps {
+  border-left: 1px solid var(--reglure); padding: .9rem 1rem 1.4rem 1rem;
+  min-width: 0; position: relative;
+}
+.ligne .corps::before {
+  content: ""; position: absolute; left: -3px; top: 1.2rem;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--reglure);
+}
+.ligne.argent .corps::before { background: var(--bille); }
+
+.nom { font-size: 1.02rem; font-weight: 600; letter-spacing: -.01em; }
+.nom.anonyme { font-weight: 400; font-style: italic; color: var(--graphite); }
+.meta { font-size: .82rem; color: var(--graphite); margin-top: .1rem; }
+.mot { font-family: var(--police-texte); font-size: .98rem; margin-top: .5rem; }
+
+.cliche {
+  display: block; width: 100%; padding: 0; border: 0; background: none;
+  cursor: zoom-in; margin-bottom: .55rem;
+}
+.cliche img {
+  display: block; width: 100%; height: auto; border-radius: 10px;
+  background: var(--reglure);
+}
+
+.etiquettes { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+.etiquette {
+  font-size: .72rem; color: var(--graphite);
+  border: 1px solid var(--reglure); border-radius: 999px; padding: .05rem .5rem;
+}
+.etoiles { color: var(--bille); letter-spacing: .1em; font-size: .9rem; }
+.etoiles .off { color: var(--reglure); }
+
+/* --- les lieux --- */
+.section-titre {
+  font-size: .78rem; font-weight: 600; color: var(--graphite);
+  padding: 2.6rem 1rem .5rem;
+}
+.lieu {
+  padding: .9rem 1rem; border-bottom: 1px solid var(--reglure);
+  display: flex; gap: .9rem; align-items: flex-start;
+}
+.lieu img {
+  width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+  flex: 0 0 auto; background: var(--reglure);
+}
+.lieu .txt { min-width: 0; flex: 1; }
+
+/* --- visionneuse --- */
+#loupe {
+  position: fixed; inset: 0; z-index: 40; background: #0b0d10;
+  display: none; align-items: center; justify-content: center; cursor: zoom-out;
+}
+#loupe.ouvert { display: flex; }
+#loupe img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#loupe button {
+  position: absolute; top: calc(env(safe-area-inset-top) + .6rem); right: .8rem;
+  background: none; border: 0; color: #fff; font-size: 1.6rem; cursor: pointer;
+  width: 2.6rem; height: 2.6rem; line-height: 1;
+}
+
+.mot-vide { padding: 5rem 1.6rem; text-align: center; }
+.mot-vide .trait { width: 1px; height: 3rem; background: var(--bille); margin: 0 auto 1.4rem; }
+.mot-vide h2 { font-family: var(--police-texte); font-weight: 400; font-size: 1.3rem; margin: 0 0 .5rem; }
+.mot-vide p { color: var(--graphite); font-size: .92rem; margin: 0 auto; max-width: 26rem; }
+
+footer.pied {
+  padding: 3rem 1rem calc(2rem + env(safe-area-inset-bottom));
+  color: var(--graphite); font-size: .76rem; text-align: center;
+}
+</style>
+</head>
+
+<body>
+  <div class="page" id="page"></div>
+  <div id="loupe" role="dialog" aria-label="Photo">
+    <img alt="" id="loupe-img">
+    <button type="button" aria-label="Fermer">✕</button>
+  </div>
+
+<script>
+"use strict";
+
+/*
+  Viewer du carnet de voyage — lecture seule.
+
+  Il lit `data.json`, produit par l'app depuis le téléphone, et les vignettes
+  déposées dans `photos/`. Il n'écrit rien, ne connaît personne, n'appelle
+  aucun service. Déployé une fois, il n'a plus jamais besoin d'être modifié :
+  seules les données changent.
+*/
+
+const $ = (s) => document.querySelector(s);
+
+function h(balise, attrs, ...enfants) {
+  const e = document.createElement(balise);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'style') Object.assign(e.style, v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'textContent' || k === 'src' || k === 'value') e[k] = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const enfant of enfants.flat(4)) {
+    if (enfant === null || enfant === undefined || enfant === false) continue;
+    e.append(enfant instanceof Node ? enfant : document.createTextNode(String(enfant)));
+  }
+  return e;
+}
+
+const FMT_JOUR = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const FMT_JOUR_AN = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const FMT_COURT = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+function dateDe(iso) {
+  const [a, m, j] = String(iso).split('-').map(Number);
+  return new Date(a, (m || 1) - 1, j || 1);
+}
+function jourLong(iso) {
+  const d = dateDe(iso);
+  return (d.getFullYear() === new Date().getFullYear() ? FMT_JOUR : FMT_JOUR_AN).format(d);
+}
+function montant(v, devise) {
+  if (!isFinite(v)) return '';
+  try {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency', currency: devise || 'EUR',
+      maximumFractionDigits: ['JPY', 'KRW', 'VND', 'IDR'].includes(devise) ? 0 : 2,
+    }).format(v);
+  } catch (_) {
+    return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(v) + ' ' + (devise || '');
+  }
+}
+
+/* ------------------------------------------------------------ visionneuse -- */
+
+const loupe = $('#loupe');
+function agrandir(fichier) {
+  $('#loupe-img').src = 'photos/' + fichier;
+  loupe.classList.add('ouvert');
+}
+function fermerLoupe() {
+  loupe.classList.remove('ouvert');
+  $('#loupe-img').removeAttribute('src');
+}
+loupe.addEventListener('click', fermerLoupe);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fermerLoupe(); });
+
+function photo(p) {
+  const img = h('img', { alt: '', loading: 'lazy', decoding: 'async', src: 'photos/' + p.f });
+  if (p.l && p.h) img.style.aspectRatio = p.l + ' / ' + p.h;
+  return h('button', { type: 'button', class: 'cliche', 'aria-label': 'Agrandir la photo', onclick: () => agrandir(p.f) }, img);
+}
+
+/* ------------------------------------------------------------------ rendu -- */
+
+function rendre(data) {
+  const page = $('#page');
+  page.textContent = '';
+
+  const s = data.stats || {};
+  const lieux = data.lieux || [];
+
+  const periode = (s.premier_jour && s.dernier_jour)
+    ? (s.premier_jour === s.dernier_jour
+      ? 'le ' + FMT_COURT.format(dateDe(s.premier_jour))
+      : 'du ' + FMT_COURT.format(dateDe(s.premier_jour)) + ' au ' + FMT_COURT.format(dateDe(s.dernier_jour)))
+    : '';
+
+  const morceaux = [];
+  if (s.lieux) morceaux.push(s.lieux + (s.lieux > 1 ? ' lieux' : ' lieu'));
+  if (s.villes) morceaux.push(s.villes + (s.villes > 1 ? ' villes' : ' ville'));
+  if (s.pays) morceaux.push(s.pays + (s.pays > 1 ? ' pays' : ' pays'));
+
+  page.append(h('header', { class: 'tete' },
+    h('h1', null, data.titre || 'Carnet de voyage'),
+    h('p', null, [morceaux.join(', '), periode].filter(Boolean).join(' — ')),
+    data.genere_le
+      ? h('p', { class: 'maj' }, 'Dernière mise à jour le '
+        + new Date(data.genere_le).toLocaleDateString('fr-FR')
+        + ' à ' + new Date(data.genere_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
+      : null,
+  ));
+
+  if (!lieux.length) {
+    page.append(h('div', { class: 'mot-vide' },
+      h('div', { class: 'trait' }),
+      h('h2', null, 'Le carnet est encore vide.'),
+      h('p', null, 'Rien n’a été partagé pour le moment. Revenez dans quelques jours.')));
+    return;
+  }
+
+  /* --- journal chronologique : on aplatit les entrées de tous les lieux --- */
+  const entrees = [];
+  for (const lieu of lieux) {
+    for (const ev of lieu.evenements || []) entrees.push({ ev, lieu });
+  }
+  entrees.sort((a, b) => {
+    if (a.ev.date !== b.ev.date) return a.ev.date < b.ev.date ? 1 : -1;
+    return (a.ev.heure || '') < (b.ev.heure || '') ? 1 : -1;
+  });
+
+  if (entrees.length) {
+    const jours = new Map();
+    for (const e of entrees) {
+      if (!jours.has(e.ev.date)) jours.set(e.ev.date, []);
+      jours.get(e.ev.date).push(e);
+    }
+
+    for (const [date, liste] of jours) {
+      const somme = liste.reduce((t, e) => t + (Number(e.ev.euros) || 0), 0);
+      page.append(h('div', { class: 'jour' },
+        h('span', null, jourLong(date)),
+        somme ? h('span', { class: 'somme' }, montant(somme, 'EUR')) : null,
+      ));
+      for (const { ev, lieu } of liste) page.append(ligne(ev, lieu));
+    }
+  }
+
+  /* --- les lieux, en index --- */
+  page.append(h('div', { class: 'section-titre' },
+    lieux.length + (lieux.length > 1 ? ' lieux' : ' lieu')));
+
+  for (const lieu of lieux) {
+    const meta = [lieu.type, lieu.ville, lieu.pays].filter(Boolean).join(', ');
+    page.append(h('div', { class: 'lieu' },
+      (lieu.photos && lieu.photos[0])
+        ? h('img', { alt: '', loading: 'lazy', src: 'photos/' + lieu.photos[0].f })
+        : null,
+      h('div', { class: 'txt' },
+        h('div', { class: 'nom' + (lieu.nom ? '' : ' anonyme') }, lieu.nom || 'Lieu sans nom'),
+        meta ? h('div', { class: 'meta' }, meta) : null,
+        lieu.note ? h('div', { class: 'etoiles' },
+          '★'.repeat(lieu.note), h('span', { class: 'off' }, '★'.repeat(5 - lieu.note))) : null,
+      ),
+    ));
+  }
+
+  page.append(h('footer', { class: 'pied' },
+    'Carnet personnel, publié à la main. Aucun compte, aucun traqueur, aucun cookie.'));
+}
+
+function ligne(ev, lieu) {
+  const photos = ev.photos && ev.photos.length ? ev.photos
+    : (ev.type === 'visite' && lieu.photos ? [] : []);
+  const meta = [];
+  if (lieu.type) meta.push(lieu.type);
+  if (lieu.ville) meta.push((meta.length ? 'à ' : '') + lieu.ville);
+
+  const aPrix = isFinite(ev.montant) && ev.montant !== null;
+
+  return h('div', { class: 'ligne' + (aPrix ? ' argent' : '') },
+    h('div', { class: 'marge' },
+      h('span', null, ev.heure || ''),
+      aPrix ? h('span', { class: 'prix' }, montant(ev.montant, ev.devise)) : null,
+    ),
+    h('div', { class: 'corps' },
+      photos.map(photo),
+      h('div', { class: 'nom' + (lieu.nom ? '' : ' anonyme') }, lieu.nom || 'Lieu sans nom'),
+      meta.length ? h('div', { class: 'meta' }, meta.join(' ')) : null,
+      ev.commentaire ? h('div', { class: 'mot' }, ev.commentaire) : null,
+      lieu.tags && lieu.tags.length
+        ? h('div', { class: 'etiquettes' }, lieu.tags.map((t) => h('span', { class: 'etiquette' }, '#' + t)))
+        : null,
+    ),
+  );
+}
+
+function erreur(titre, texte) {
+  $('#page').textContent = '';
+  $('#page').append(h('div', { class: 'mot-vide' },
+    h('div', { class: 'trait', style: { background: 'var(--reglure)' } }),
+    h('h2', null, titre),
+    h('p', null, texte)));
+}
+
+/* ---------------------------------------------------------------- départ -- */
+
+// Le paramètre anti-cache garantit qu'on voit la dernière publication et non
+// une copie gardée par le navigateur ou par le CDN de GitHub Pages.
+fetch('data.json?t=' + Date.now(), { cache: 'no-store' })
+  .then((r) => {
+    if (r.status === 404) throw new Error('absent');
+    if (!r.ok) throw new Error('http');
+    return r.json();
+  })
+  .then(rendre)
+  .catch((e) => {
+    if (e.message === 'absent') {
+      erreur('Le carnet n’a pas encore été publié.',
+        'Cette page est prête ; elle attend sa première mise à jour depuis le téléphone.');
+    } else if (e instanceof SyntaxError) {
+      erreur('Les données publiées sont illisibles.',
+        'Le fichier data.json existe mais n’est pas un JSON valide. Une nouvelle publication depuis l’app le remplacera.');
+    } else {
+      erreur('Impossible de charger le carnet.',
+        'Vérifiez votre connexion, puis rechargez la page.');
+    }
+  });
+</script>
+</body>
+</html>
