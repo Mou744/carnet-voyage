@@ -1603,7 +1603,10 @@ function vueArgent() {
       h('div', { class: 'vide__trait', style: { background: 'var(--reglure)' } }),
       h('h2', null, 'Rien dépensé sur cette période.'),
       h('p', null, 'Changez de période, ou allez vivre quelque chose.')));
+    // Le budget et les idées d'achat ne dépendent pas de la période affichée :
+    // sans ça, une semaine sans dépense rendrait le budget introuvable.
     ajouter(frag, sectionResteAAcheter());
+    ajouter(frag, sectionBudget());
     return frag;
   }
 
@@ -1969,6 +1972,21 @@ function vueReglages() {
     h('button', { class: 'bouton bouton--calme', onclick: () => feuilleTaux(null) }, 'Ajouter un taux')));
 
   frag.append(
+    h('div', { class: 'sous-titre' }, 'Budget'),
+    h('button', { class: 'rangee', onclick: feuilleBudget },
+      h('div', { class: 'rangee__texte' },
+        h('div', { class: 'rangee__titre' },
+          etat.prefs.budget && etat.prefs.budget.montant > 0
+            ? formatEuros(etat.prefs.budget.montant)
+            : 'Aucun budget'),
+        h('div', { class: 'rangee__sous' },
+          etat.prefs.budget && etat.prefs.budget.montant > 0
+            ? 'Depuis le ' + formatDateCourte(etat.prefs.budget.debut)
+              + (etat.prefs.budget.fin ? ' jusqu’au ' + formatDateCourte(etat.prefs.budget.fin) : '')
+            : 'Optionnel — un repère, jamais un blocage')),
+      h('div', { class: 'rangee__droite' }, svg(ICONES.chevron)),
+    ),
+
     h('div', { class: 'sous-titre' }, 'Stockage'),
     h('div', { id: 'zone-stockage', style: { padding: '0 1rem' } },
       h('p', { class: 'note-info', style: { margin: 0 } }, 'Calcul en cours…')),
