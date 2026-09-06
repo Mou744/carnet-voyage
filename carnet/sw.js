@@ -11,7 +11,7 @@
 */
 
 // Incrémenter cette version publie une mise à jour de l'app.
-const VERSION = 'carnet-v1';
+const VERSION = 'carnet-v2';
 
 const FICHIERS = [
   './voyage.html',
