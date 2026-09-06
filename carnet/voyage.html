@@ -2726,8 +2726,10 @@ function messageErreurGitHub(err) {
   if (err && err.statut === 404) {
     // GitHub renvoie 404 — et non 403 — quand un jeton n'a pas accès à un
     // dépôt : impossible de distinguer « inexistant » de « interdit ».
-    return 'Dépôt introuvable — ou, bien plus souvent, le jeton n’y a pas accès. '
-      + 'Sur GitHub, vérifiez que le jeton liste ce dépôt et qu’il a « Contents : Read and write ».';
+    return 'Dépôt introuvable. Deux causes possibles : le nom saisi n’est pas celui '
+      + 'du dépôt sur GitHub (celui de l’adresse github.com/pseudo/ce-nom-là, pas le nom '
+      + 'de votre voyage) ; ou le jeton n’a pas accès à ce dépôt — il doit le lister dans '
+      + '« Repository access » et avoir « Contents : Read and write ».';
   }
   if (err && err.statut === 409) return 'Le dépôt a changé entre-temps. Relancez la publication.';
   if (err && err.statut === 422) return 'GitHub a refusé le contenu. Relancez la publication.';
@@ -2897,8 +2899,10 @@ function feuilleGitHub() {
 
       return h('div', null,
         h('div', { class: 'champ' }, h('label', null, 'Propriétaire du dépôt'), cProprio),
-        h('div', { class: 'champ' }, h('label', null, 'Nom du dépôt'), cDepot,
-          h('div', { class: 'aide' }, 'Le nom seul, sans le pseudo devant ni l’adresse complète.')),
+        h('div', { class: 'champ' }, h('label', null, 'Nom du dépôt GitHub'), cDepot,
+          h('div', { class: 'aide' },
+            'Celui qui apparaît dans l’adresse github.com/pseudo/'
+            + 'ce-nom-là — pas le nom de votre voyage. Le nom seul, sans le pseudo devant.')),
         h('div', { class: 'champ' }, h('label', null, 'Branche'), cBranche),
         h('div', { class: 'champ' }, h('label', null, 'Jeton d’accès'), cToken,
           h('div', { class: 'aide' },
@@ -4636,7 +4640,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v8';
+const VERSION_APP = 'carnet-v9';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.
