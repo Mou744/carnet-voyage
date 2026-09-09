@@ -273,6 +273,45 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 1.4rem 1rem 0.4rem; letter-spacing: 0;
 }
 
+/* ------------------------------------------------------------ voyages ---- */
+
+.bandeau {
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+  margin: 0.7rem 1rem 0; padding: 0.55rem 0.75rem;
+  background: var(--bille-pale); border-radius: var(--rayon);
+  font-size: 0.85rem;
+}
+.bandeau > span { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.bandeau button {
+  flex: 0 0 auto; background: none; border: 0; cursor: pointer;
+  color: var(--bille); font-weight: 600; font-size: 0.82rem; padding: 0;
+}
+
+.voyage {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0 0.6rem 0 0; border-bottom: 1px solid var(--reglure);
+}
+.voyage--ouvert { background: var(--papier-haut); }
+.voyage__ouvrir {
+  flex: 1 1 auto; min-width: 0; text-align: left;
+  background: none; border: 0; cursor: pointer; color: inherit;
+  padding: 0.9rem 0.5rem 0.9rem 1rem;
+}
+.voyage__ouvrir:active { opacity: 0.7; }
+.voyage__titre {
+  font-size: 1.02rem; font-weight: 600; letter-spacing: -0.01em;
+  display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap;
+}
+.voyage__marque {
+  font-size: 0.68rem; font-weight: 600; color: var(--bille);
+  border: 1px solid var(--bille); border-radius: 999px; padding: 0 0.4rem;
+}
+.voyage__dates {
+  font-family: var(--police-chiffres); font-variant-numeric: tabular-nums;
+  font-size: 0.76rem; color: var(--graphite); margin-top: 0.2rem;
+}
+.voyage__chiffres { font-size: 0.8rem; color: var(--graphite); margin-top: 0.15rem; }
+
 /* -------------------------------------------------------------- listes ---- */
 
 .rangee {
@@ -1136,6 +1175,8 @@ const etat = {
   evenements: [],
   prefs: {},
   filtres: videsFiltres(),
+  // Jour de départ du voyage consulté ; null veut dire « celui en cours ».
+  voyageOuvert: null,
 };
 
 function videsFiltres() {
@@ -1159,7 +1200,81 @@ function triChronoDesc(a, b) {
   return (b.cree_le || '') < (a.cree_le || '') ? -1 : 1;
 }
 
+/* ==========================================================================
+   VOYAGES
+
+   Un voyage n'est pas une entité de plus : c'est une période, déduite des
+   silences. Plus de dix jours sans rien noter séparent deux voyages. Rien à
+   démarrer, rien à clôturer, et le découpage vaut rétroactivement pour tout
+   ce qui est déjà dans le carnet.
+
+   Seul le nom est stocké, en préférence, indexé sur le jour de départ.
+   ========================================================================== */
+
+const COUPURE_VOYAGE = 10;
+
+function decouperVoyages() {
+  const jours = [...new Set(evenementsVivants().map((e) => e.date))].sort();
+  if (!jours.length) return [];
+
+  // Une détection automatique se trompe forcément un jour : onze jours sans
+  // rien noter au milieu d'un vrai voyage le couperaient en deux. Ces
+  // jointures sont les coupures que vous avez explicitement refusées.
+  const jointures = new Set(etat.prefs.jointures_voyages || []);
+
+  const voyages = [];
+  let debut = jours[0], precedent = jours[0];
+  for (const j of jours.slice(1)) {
+    if (nbJours(precedent, j) - 1 > COUPURE_VOYAGE && !jointures.has(j)) {
+      voyages.push({ debut, fin: precedent });
+      debut = j;
+    }
+    precedent = j;
+  }
+  voyages.push({ debut, fin: precedent });
+  return voyages.reverse();                 // le plus récent en tête
+}
+
+/** Les coupures refusées à l'intérieur d'un voyage donné. */
+const jointuresDe = (v) => (etat.prefs.jointures_voyages || [])
+  .filter((j) => j > v.debut && j <= v.fin);
+
+/** Le nom suit son jour de départ ; s'il a bougé, on le rattrape par recouvrement. */
+function nomVoyage(v) {
+  const noms = etat.prefs.noms_voyages || {};
+  if (noms[v.debut]) return noms[v.debut];
+  for (const [cle, nom] of Object.entries(noms)) {
+    if (cle >= v.debut && cle <= v.fin) return nom;
+  }
+  return '';
+}
+
+const titreVoyage = (v) => nomVoyage(v)
+  || (v.debut === v.fin ? formatJour(v.debut)
+    : libellePeriode('semaine', v.debut, v.fin));
+
+/** Le voyage ouvert. `null` en mémoire signifie « le plus récent ». */
+function voyageOuvert() {
+  const tous = decouperVoyages();
+  if (!tous.length) return null;
+  if (!etat.voyageOuvert) return tous[0];
+  return tous.find((v) => v.debut === etat.voyageOuvert) || tous[0];
+}
+
+const bornesVoyage = () => voyageOuvert();
+const estVoyageEnCours = (v) => {
+  const tous = decouperVoyages();
+  return !!v && !!tous.length && tous[0].debut === v.debut;
+};
+
 const evenementsVivants = () => etat.evenements.filter((e) => !e.supprime_le);
+
+/** Les entrées du voyage ouvert — la base de tout ce qui s'affiche. */
+function evenementsDuVoyage() {
+  const v = bornesVoyage();
+  const vivants = evenementsVivants();
+  return v ? vivants.filter((e) => e.date >= v.debut && e.date <= v.fin) : vivants;
+}
 const lieuxVivants = () => [...etat.lieux.values()].filter((l) => !l.supprime_le);
 const lieuDe = (ev) => etat.lieux.get(ev.lieu_id) || null;
 const nomLieu = (l) => (l && l.nom && l.nom.trim()) || '';
@@ -1190,7 +1305,8 @@ function tousLesPays() {
 function evenementsFiltres() {
   const f = etat.filtres;
   const texte = f.texte.trim().toLowerCase();
-  return evenementsVivants().filter((ev) => {
+  // Le voyage ouvert borne tout ; les filtres ne font que resserrer.
+  return evenementsDuVoyage().filter((ev) => {
     const lieu = lieuDe(ev);
     if (f.typeEv && ev.type !== f.typeEv) return false;
     if (f.typeLieu && (!lieu || lieu.type !== f.typeLieu)) return false;
@@ -1234,6 +1350,7 @@ function rendre() {
     argent: vueArgent,
     partage: vuePartage,
     carte: vueCarte,
+    voyages: vueVoyages,
     corbeille: vueCorbeille,
     reglages: vueReglages,
   };
@@ -1258,6 +1375,7 @@ const ONGLETS = [
   ['journal', 'Journal'],
   ['argent', 'Argent'],
   ['carte', 'Carte'],
+  ['voyages', 'Voyages'],
   ['partage', 'Partage'],
 ];
 const estVuePrincipale = (nom) => ONGLETS.some(([n]) => n === nom);
@@ -1333,6 +1451,20 @@ function rendreBarre() {
 function vueJournal() {
   const frag = document.createDocumentFragment();
   const evs = evenementsFiltres();
+
+  // Consulter un voyage terminé doit se voir : sans ça, on croit avoir perdu
+  // ses dernières entrées.
+  const v = voyageOuvert();
+  if (v && !estVoyageEnCours(v)) {
+    frag.append(h('div', { class: 'bandeau' },
+      h('span', null, titreVoyage(v), ' — ',
+        h('span', { style: { color: 'var(--graphite)' } },
+          formatDateCourte(v.debut) + ' au ' + formatDateCourte(v.fin))),
+      h('button', {
+        onclick: () => { etat.voyageOuvert = null; etat.filtres = videsFiltres(); rendre(); },
+      }, 'Revenir au voyage en cours'),
+    ));
+  }
 
   if (filtresActifs()) frag.append(rendrePucesFiltres(evs.length));
 
@@ -1613,9 +1745,10 @@ function bornesPeriode(mode, ancre) {
     const au = isoLocal(new Date(d.getFullYear(), d.getMonth() + 1, 0));
     return { du, au };
   }
-  // « tout » : du premier jour noté jusqu'à aujourd'hui.
-  const dates = evenementsVivants().map((e) => e.date).sort();
-  return { du: dates[0] || isoLocal(), au: isoLocal() };
+  // « tout » : l'étendue du voyage ouvert, et non celle du carnet entier.
+  const v = bornesVoyage();
+  if (v) return { du: v.debut, au: v.fin > isoLocal() ? v.fin : isoLocal() };
+  return { du: isoLocal(), au: isoLocal() };
 }
 
 function decalerPeriode(mode, ancre, sens) {
@@ -3422,8 +3555,10 @@ async function appliquerSauvegarde(data, mode) {
 const A_UNE_POSITION = (l) => Number.isFinite(l.latitude) && Number.isFinite(l.longitude);
 
 function statistiquesVoyage() {
-  const lieux = lieuxVivants();
-  const evs = evenementsVivants();
+  // Les chiffres décrivent le voyage ouvert, pas la somme d'une vie de voyages.
+  const evs = evenementsDuVoyage();
+  const visites = new Set(evs.map((e) => e.lieu_id));
+  const lieux = lieuxVivants().filter((l) => visites.has(l.id));
   const dates = evs.map((e) => e.date).sort();
 
   // Kilomètres à vol d'oiseau entre lieux successifs, dans l'ordre de la
@@ -3586,7 +3721,8 @@ function vueCarte() {
   }
 
   /* --- la carte --- */
-  const avecPosition = lieuxVivants().filter(A_UNE_POSITION);
+  const visitesDuVoyage = new Set(evenementsDuVoyage().map((e) => e.lieu_id));
+  const avecPosition = lieuxVivants().filter((l) => A_UNE_POSITION(l) && visitesDuVoyage.has(l.id));
   const villes = [...new Set(avecPosition.map((l) => l.ville).filter(Boolean))].sort(
     (a, b) => a.localeCompare(b, 'fr'));
   const filtreVille = etat.vue.ville || '';
@@ -3651,7 +3787,7 @@ function vueCarte() {
   }
 
   for (const p of points) {
-    const n = evenementsVivants().filter((e) => e.lieu_id === p.lieu.id).length;
+    const n = evenementsDuVoyage().filter((e) => e.lieu_id === p.lieu.id).length;
     toile.append(h('button', {
       class: 'point',
       style: { left: (p.x * 100) + '%', top: (p.y * 100) + '%' },
@@ -3950,6 +4086,137 @@ async function retirerExemples() {
     t.fermer();
     toast(messageErreurEcriture(err), [], 9000);
   }
+}
+
+/* ------------------------------------------------------------ voyages ---- */
+
+function vueVoyages() {
+  const frag = document.createDocumentFragment();
+  const tous = decouperVoyages();
+
+  if (!tous.length) {
+    frag.append(h('div', { class: 'vide' },
+      h('div', { class: 'vide__trait' }),
+      h('h2', null, 'Aucun voyage pour l’instant.'),
+      h('p', null, 'Le premier commencera à votre première entrée. '
+        + 'Les suivants se détecteront tout seuls, après une coupure de plus de '
+        + COUPURE_VOYAGE + ' jours.')));
+    return frag;
+  }
+
+  const ouvert = voyageOuvert();
+  frag.append(h('p', { class: 'note-info', style: { margin: '1rem' } },
+    'Un voyage est une période sans coupure de plus de ' + COUPURE_VOYAGE
+    + ' jours. Ouvrez-en un : le journal, l’argent et la carte s’y limitent.'));
+
+  for (const v of tous) {
+    const evs = evenementsVivants().filter((e) => e.date >= v.debut && e.date <= v.fin);
+    const lieux = new Set(evs.map((e) => e.lieu_id));
+    const villes = new Set([...lieux].map((id) => (etat.lieux.get(id) || {}).ville).filter(Boolean));
+    const euros = evs.filter(estDepense).reduce((s, e) => s + enEuros(e), 0);
+    const enCours = estVoyageEnCours(v);
+    const estOuvert = ouvert && ouvert.debut === v.debut;
+
+    frag.append(h('div', { class: 'voyage' + (estOuvert ? ' voyage--ouvert' : '') },
+      h('button', {
+        class: 'voyage__ouvrir',
+        onclick: () => {
+          etat.voyageOuvert = enCours ? null : v.debut;
+          etat.filtres = videsFiltres();
+          naviguer({ nom: 'journal' });
+        },
+      },
+        h('div', { class: 'voyage__titre' },
+          titreVoyage(v),
+          enCours ? h('span', { class: 'voyage__marque' }, 'en cours') : null),
+        h('div', { class: 'voyage__dates' },
+          formatDateCourte(v.debut) + ' – ' + formatDateCourte(v.fin)
+          + ' · ' + nbJours(v.debut, v.fin) + (nbJours(v.debut, v.fin) > 1 ? ' jours' : ' jour')),
+        h('div', { class: 'voyage__chiffres' },
+          [
+            [...villes].slice(0, 3).join(', ') || 'sans ville',
+            lieux.size + (lieux.size > 1 ? ' lieux' : ' lieu'),
+            evs.length + (evs.length > 1 ? ' entrées' : ' entrée'),
+            euros ? formatEuros(euros) : null,
+          ].filter(Boolean).join(' · ')),
+      ),
+      h('button', {
+        class: 'ico', 'aria-label': 'Renommer ce voyage',
+        onclick: () => feuilleNomVoyage(v),
+      }, svg(ICONES.plume, '1.9')),
+    ));
+  }
+  return frag;
+}
+
+function feuilleNomVoyage(v) {
+  let champ;
+  const tous = decouperVoyages();
+  const rang = tous.findIndex((x) => x.debut === v.debut);
+  const precedent = rang >= 0 && rang < tous.length - 1 ? tous[rang + 1] : null;
+  const recollees = jointuresDe(v);
+
+  ouvrirFeuille({
+    titre: 'Ce voyage',
+    labelValider: 'Enregistrer',
+    corps: (f) => {
+      champ = h('input', {
+        type: 'text', value: nomVoyage(v), autocomplete: 'off',
+        placeholder: 'Corée – Japon',
+      });
+      setTimeout(() => champ.focus(), 60);
+      return h('div', null,
+        h('div', { class: 'champ' },
+          h('label', null, 'Du ' + formatDateCourte(v.debut) + ' au ' + formatDateCourte(v.fin)),
+          champ),
+
+        // La soupape : le découpage automatique se trompera un jour.
+        precedent ? h('div', null,
+          h('button', {
+            type: 'button', class: 'bouton bouton--calme',
+            onclick: async () => {
+              const j = [...(etat.prefs.jointures_voyages || []), v.debut];
+              await ecrirePref('jointures_voyages', [...new Set(j)].sort());
+              etat.voyageOuvert = precedent.debut;
+              f.fermer(false, rendre);
+            },
+          }, 'Rattacher au voyage précédent'),
+          h('div', { class: 'aide' },
+            'Si la coupure du ' + formatDateCourte(v.debut) + ' n’en était pas une : '
+            + '« ' + titreVoyage(precedent) + ' » et celui-ci n’en feront plus qu’un.')) : null,
+
+        recollees.length ? h('div', { style: { marginTop: '0.8rem' } },
+          h('button', {
+            type: 'button', class: 'bouton bouton--calme',
+            onclick: async () => {
+              const restantes = (etat.prefs.jointures_voyages || [])
+                .filter((j) => !recollees.includes(j));
+              await ecrirePref('jointures_voyages', restantes);
+              etat.voyageOuvert = null;
+              f.fermer(false, rendre);
+            },
+          }, 'Rendre les coupures automatiques'),
+          h('div', { class: 'aide' },
+            recollees.length + (recollees.length > 1 ? ' coupures ont été refusées' : ' coupure a été refusée')
+            + ' dans ce voyage. Ce bouton les rétablit.')) : null,
+
+        h('p', { class: 'note-info' },
+          'Le découpage reste automatique : plus de ' + COUPURE_VOYAGE
+          + ' jours sans rien noter ouvrent un nouveau voyage.'),
+      );
+    },
+    valider: async () => {
+      const noms = { ...(etat.prefs.noms_voyages || {}) };
+      const nom = champ.value.trim();
+      // On efface l'ancienne clé si le départ a bougé entre-temps.
+      for (const cle of Object.keys(noms)) {
+        if (cle >= v.debut && cle <= v.fin) delete noms[cle];
+      }
+      if (nom) noms[v.debut] = nom;
+      await ecrirePref('noms_voyages', noms);
+      return rendre;
+    },
+  });
 }
 
 /* ----------------------------------------------------------- corbeille ---- */
@@ -4544,6 +4811,8 @@ async function enregistrerCapture(fichier) {
     etat.evenements.unshift(evenement);
     etat.evenements.sort(triChronoDesc);
     idNouvelleLigne = evenement.id;
+    // Une nouvelle entrée appartient au voyage en cours : on y revient.
+    etat.voyageOuvert = null;
     if (etat.vue.nom !== 'journal' && etat.vue.nom !== 'lieu') etat.vue = { nom: 'journal' };
     rendre();
 
@@ -4800,6 +5069,8 @@ async function creerDepenseRapide(montant, devise, taux, photo) {
     etat.evenements.unshift(ev);
     etat.evenements.sort(triChronoDesc);
     idNouvelleLigne = ev.id;
+    // Une nouvelle entrée appartient au voyage en cours : on y revient.
+    etat.voyageOuvert = null;
     if (etat.vue.nom !== 'journal' && etat.vue.nom !== 'lieu') etat.vue = { nom: 'journal' };
     rendre();
     annoncerAjout(ev, lieu, nouveau);
@@ -5107,7 +5378,11 @@ function feuilleEvenement(evOrigine, options = {}) {
       const i = etat.evenements.findIndex((x) => x.id === ev.id);
       if (i >= 0) etat.evenements[i] = ev; else etat.evenements.push(ev);
       etat.evenements.sort(triChronoDesc);
-      if (creation) idNouvelleLigne = ev.id;
+      if (creation) {
+        idNouvelleLigne = ev.id;
+        // Une entrée créée aujourd'hui appartient au voyage en cours.
+        if (ev.date >= isoLocal()) etat.voyageOuvert = null;
+      }
       rendre();
       return true;
     },
@@ -5670,7 +5945,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v13';
+const VERSION_APP = 'carnet-v14';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.
