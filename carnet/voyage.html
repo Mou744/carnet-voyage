@@ -432,13 +432,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background-size: 12.5% 16.667%;
   overflow: hidden;
 }
+/* Les tuiles couvrent la trame quand le réseau est là ; sinon elles ne sont
+   jamais demandées, et la trame reste la carte. */
+.tuile { position: absolute; pointer-events: none; user-select: none; }
+@media (prefers-color-scheme: dark) {
+  /* Les tuiles d'OpenStreetMap sont claires : on les inverse pour qu'elles ne
+     brûlent pas les yeux sur fond sombre, en gardant les teintes lisibles. */
+  .tuile { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9); }
+}
+.attribution {
+  position: absolute; right: 0.35rem; bottom: 0.3rem;
+  font-size: 0.6rem; color: var(--graphite);
+  background: var(--papier); opacity: 0.85;
+  padding: 0.05rem 0.3rem; border-radius: 3px; pointer-events: none;
+}
+
 .toile__trace {
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none;
 }
 .toile__trace polyline {
-  fill: none; stroke: var(--bille); stroke-width: 0.35;
-  stroke-linejoin: round; stroke-linecap: round; opacity: 0.45;
+  fill: none; stroke: var(--bille); stroke-width: 2;
+  stroke-linejoin: round; stroke-linecap: round; opacity: 0.7;
   vector-effect: non-scaling-stroke;
 }
 
@@ -3419,38 +3434,85 @@ function statistiquesVoyage() {
  * du terrain : un degré de longitude est plus court qu'un degré de latitude
  * dès qu'on s'éloigne de l'équateur.
  */
+/** Projection de Mercator sphérique, en pixels « monde » (256 px au zoom 0). */
+function versMondePx(lat, lon, zoom) {
+  const n = 256 * Math.pow(2, zoom);
+  const s = Math.sin(Math.max(-85, Math.min(85, lat)) * Math.PI / 180);
+  return {
+    x: (lon + 180) / 360 * n,
+    y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n,
+  };
+}
+
+/**
+ * Cadre la constellation des lieux. Mercator, et non plus une projection
+ * maison : c'est la seule qui s'aligne avec des tuiles de carte, et elle garde
+ * des pixels carrés — donc une échelle honnête.
+ */
 function projeterLieux(lieux, aspect) {
+  const brut = lieux.map((l) => versMondePx(l.latitude, l.longitude, 0));
+  let x0 = Math.min(...brut.map((p) => p.x)), x1 = Math.max(...brut.map((p) => p.x));
+  let y0 = Math.min(...brut.map((p) => p.y)), y1 = Math.max(...brut.map((p) => p.y));
+
+  // Un lieu unique, ou plusieurs confondus : fenêtre d'environ 600 m.
+  const MINI = 0.004;
+  if (x1 - x0 < MINI) { const c = (x0 + x1) / 2; x0 = c - MINI / 2; x1 = c + MINI / 2; }
+  if (y1 - y0 < MINI) { const c = (y0 + y1) / 2; y0 = c - MINI / 2; y1 = c + MINI / 2; }
+
+  // Zoom entier le plus proche pour occuper ~900 px de large, marge comprise.
+  let zoom = Math.floor(Math.log2(900 / ((x1 - x0) * 1.35)));
+  zoom = Math.max(0, Math.min(18, zoom));
+  const e = Math.pow(2, zoom);
+
+  let rx0 = x0 * e, rx1 = x1 * e, ry0 = y0 * e, ry1 = y1 * e;
+  const marge = 0.16;
+  const mx = (rx1 - rx0) * marge, my = (ry1 - ry0) * marge;
+  rx0 -= mx; rx1 += mx; ry0 -= my; ry1 += my;
+
+  // On étire la plus petite dimension pour épouser le cadre sans déformer.
+  let dx = rx1 - rx0, dy = ry1 - ry0;
+  if (dx / dy < aspect) { const v = (dy * aspect - dx) / 2; rx0 -= v; rx1 += v; }
+  else { const v = (dx / aspect - dy) / 2; ry0 -= v; ry1 += v; }
+  dx = rx1 - rx0; dy = ry1 - ry0;
+
   const latMoy = lieux.reduce((s, l) => s + l.latitude, 0) / lieux.length;
-  const k = Math.cos(latMoy * Math.PI / 180) || 1;
-
-  const xs = lieux.map((l) => l.longitude * k);
-  const ys = lieux.map((l) => -l.latitude);          // le nord est en haut
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
-
-  const L = 1000, H = 1000 / aspect, P = 90;
-  const largeurDeg = maxX - minX, hauteurDeg = maxY - minY;
-
-  // Un seul lieu, ou plusieurs confondus : on choisit une fenêtre de ~300 m.
-  const parDefaut = (L - 2 * P) / 0.0027;
-  const s = (largeurDeg <= 0 && hauteurDeg <= 0) ? parDefaut
-    : Math.min(
-      largeurDeg > 0 ? (L - 2 * P) / largeurDeg : Infinity,
-      hauteurDeg > 0 ? (H - 2 * P) / hauteurDeg : Infinity);
-
-  const decX = (L - (largeurDeg * s)) / 2 - minX * s;
-  const decY = (H - (hauteurDeg * s)) / 2 - minY * s;
 
   return {
-    points: lieux.map((l) => ({
-      lieu: l,
-      x: ((l.longitude * k) * s + decX) / L,
-      y: ((-l.latitude) * s + decY) / H,
-    })),
-    // 111 320 m par degré : la correction cos est déjà dans les abscisses.
-    metresParUnite: 111320 / s,
-    largeurVirtuelle: L,
+    points: lieux.map((l) => {
+      const p = versMondePx(l.latitude, l.longitude, zoom);
+      return { lieu: l, x: (p.x - rx0) / dx, y: (p.y - ry0) / dy };
+    }),
+    // En Mercator, l'échelle dépend de la latitude.
+    metresParUnite: 156543.03392 * Math.cos(latMoy * Math.PI / 180) / e,
+    largeurVirtuelle: dx,
+    zoom,
+    rect: { x0: rx0, y0: ry0, x1: rx1, y1: ry1 },
   };
+}
+
+/**
+ * Les tuiles qui couvrent le cadre, positionnées en pourcentages : la carte
+ * reste juste quelle que soit la largeur réelle du conteneur.
+ */
+function tuilesDuCadre(rect, zoom, maximum = 40) {
+  const n = Math.pow(2, zoom);
+  const dx = rect.x1 - rect.x0, dy = rect.y1 - rect.y0;
+  const tuiles = [];
+
+  for (let ty = Math.floor(rect.y0 / 256); ty <= Math.floor((rect.y1 - 1e-6) / 256); ty++) {
+    if (ty < 0 || ty >= n) continue;                 // au-delà des pôles
+    for (let tx = Math.floor(rect.x0 / 256); tx <= Math.floor((rect.x1 - 1e-6) / 256); tx++) {
+      if (tuiles.length >= maximum) return tuiles;
+      tuiles.push({
+        z: zoom, x: ((tx % n) + n) % n, y: ty,       // la longitude fait le tour
+        gauche: (tx * 256 - rect.x0) / dx * 100,
+        haut: (ty * 256 - rect.y0) / dy * 100,
+        largeur: 256 / dx * 100,
+        hauteur: 256 / dy * 100,
+      });
+    }
+  }
+  return tuiles;
 }
 
 /** Choisit une longueur d'échelle ronde : 1, 2 ou 5 fois une puissance de dix. */
@@ -3525,10 +3587,28 @@ function vueCarte() {
   }
 
   const ASPECT = 4 / 3;
-  const { points, metresParUnite, largeurVirtuelle } = projeterLieux(affiches, ASPECT);
+  const { points, metresParUnite, largeurVirtuelle, zoom, rect } = projeterLieux(affiches, ASPECT);
   const echelle = barreEchelle(metresParUnite, largeurVirtuelle);
 
   const toile = h('div', { class: 'toile' });
+
+  /* --- le fond de plan, si le réseau est autorisé et présent --- */
+  const avecFond = reseauUtilisable();
+  if (avecFond) {
+    for (const t of tuilesDuCadre(rect, zoom)) {
+      toile.append(h('img', {
+        class: 'tuile', alt: '', loading: 'lazy', decoding: 'async',
+        src: 'https://tile.openstreetmap.org/' + t.z + '/' + t.x + '/' + t.y + '.png',
+        style: {
+          left: t.gauche + '%', top: t.haut + '%',
+          width: t.largeur + '%', height: t.hauteur + '%',
+        },
+        // Une tuile qui ne vient pas s'efface : la trame reprend sa place.
+        onerror: (e) => e.target.remove(),
+      }));
+    }
+    toile.append(h('div', { class: 'attribution' }, '© OpenStreetMap'));
+  }
 
   // Le tracé chronologique, en dessous et sans interception du toucher.
   const suite = st.ordonnes.map((o) => points.find((p) => p.lieu.id === o.l.id)).filter(Boolean);
@@ -3566,10 +3646,29 @@ function vueCarte() {
     h('div', { class: 'echelle__mot' }, echelle.libelle)));
 
   frag.append(h('div', { style: { padding: '0 1rem' } }, toile));
+
+  // Combien de lieux se confondent visuellement à cette échelle ?
+  const CONFUSION = 0.022;
+  const superposes = points.filter((a) => points.some((b) =>
+    b !== a && Math.abs(a.x - b.x) < CONFUSION && Math.abs(a.y - b.y) < CONFUSION)).length;
+
   frag.append(h('p', { class: 'bloc__note' },
     affiches.length + (affiches.length > 1 ? ' lieux placés' : ' lieu placé')
     + (suite.length > 1 ? ', reliés dans l’ordre de la première visite' : '')
-    + '. Pas de fond de plan : la carte fonctionne en mode avion. Touchez un point pour ouvrir sa fiche.'));
+    + '. Touchez un point pour ouvrir sa fiche.',
+    superposes > 1
+      ? ' À cette échelle, ' + superposes + ' d’entre eux se superposent'
+        + (villes.length > 1 ? ' — choisissez une ville ci-dessus pour les séparer.' : '.')
+      : '',
+    avecFond ? '' : ' Sans réseau, la carte reste utilisable : seul le fond de plan manque.'));
+
+  if (!avecFond) {
+    frag.append(h('div', { style: { padding: '0.2rem 1rem 0' } },
+      h('button', {
+        class: 'bouton bouton--calme',
+        onclick: async () => { if (await autoriserReseau()) rendre(); },
+      }, 'Afficher le fond de plan')));
+  }
 
   /* --- la liste, pour ouvrir dans Plans --- */
   frag.append(h('div', { class: 'sous-titre' }, 'Ouvrir ailleurs'));
@@ -5546,7 +5645,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v11';
+const VERSION_APP = 'carnet-v12';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.
