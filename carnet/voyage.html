@@ -2504,6 +2504,10 @@ function feuilleAlentour(lieu, appliquer) {
 const optionsPartage = () => Object.assign(
   { montants: false, gps: false }, etat.prefs.partage_options || {});
 
+/* Ne sont candidats au ménage que les fichiers que l'app a elle-même déposés :
+   jamais un .gitkeep, ni quoi que ce soit ajouté à la main dans le dépôt. */
+const NOM_VIGNETTE = /^[0-9a-f-]{20,40}\.(webp|jpe?g|png)$/i;
+
 /** Rassemble les vignettes d'une liste de références, sans doublon. */
 async function collecterVignettes(refs, sac) {
   const sortie = [];
@@ -2945,13 +2949,31 @@ async function publierSurGitHub() {
   try {
     const paquet = await construireExport();
 
+    /*
+      Ce qui est réellement en ligne fait foi — jamais ce que cet appareil
+      croit avoir publié. Sans cela, publier depuis un second appareil laisse
+      derrière lui les photos du premier, orphelines et pourtant accessibles.
+    */
+    dire('Inventaire de ce qui est en ligne…');
+    let enLigne = null;
+    try {
+      const liste = await appelGitHub(cfg,
+        '/contents/photos?ref=' + encodeURIComponent(cfg.branche || 'main'), 'GET');
+      enLigne = (liste || []).filter((f) => f.type === 'file' && NOM_VIGNETTE.test(f.name));
+    } catch (_) {
+      // Dossier absent, ou lecture impossible : on publiera sans faire le ménage.
+      enLigne = null;
+    }
+    const dejaEnLigne = enLigne
+      ? new Set(enLigne.map((f) => f.name))
+      : new Set(Object.keys(publie.photos));
+
     /* --- les vignettes d'abord : le JSON ne doit jamais pointer dans le vide --- */
+    const manquantes = paquet.photos.filter((p) => !dejaEnLigne.has(p.nom));
     let envoyees = 0;
-    for (const p of paquet.photos) {
-      if (publie.photos[p.nom]) continue;                 // déjà en ligne
+    for (const p of manquantes) {
       envoyees++;
-      dire('Envoi des photos ' + envoyees + '/'
-        + paquet.photos.filter((x) => !publie.photos[x.nom]).length + '…');
+      dire('Envoi des photos ' + envoyees + ' sur ' + manquantes.length + '…');
       const rep = await apiGitHub(cfg, 'photos/' + p.nom, 'PUT', {
         message: 'Carnet : photo ' + p.nom,
         content: await blobEnBase64(p.blob),
@@ -2972,24 +2994,27 @@ async function publierSurGitHub() {
     });
     publie.data = rep && rep.content ? rep.content.sha : null;
 
-    /* --- retirer les vignettes qui ne sont plus partagées --- */
+    /* --- retirer du dépôt tout ce que le JSON ne cite plus --- */
     const encore = new Set(paquet.photos.map((p) => p.nom));
-    const aRetirer = Object.keys(publie.photos).filter((nom) => !encore.has(nom));
+    // L'inventaire porte déjà le sha de chaque fichier : aucune lecture en plus.
+    const aRetirer = (enLigne || Object.keys(publie.photos).map((nom) => ({ name: nom, sha: null })))
+      .filter((f) => !encore.has(f.name));
+
     let retirees = 0;
-    for (const nom of aRetirer) {
-      dire('Retrait des photos décochées…');
+    for (const f of aRetirer) {
+      dire('Retrait ' + (retirees + 1) + ' sur ' + aRetirer.length + '…');
       try {
-        const info = await apiGitHub(cfg, 'photos/' + nom, 'GET');
-        if (info && info.sha) {
-          await apiGitHub(cfg, 'photos/' + nom, 'DELETE', {
-            message: 'Carnet : retrait de ' + nom,
-            sha: info.sha,
+        const sha = f.sha || (await apiGitHub(cfg, 'photos/' + f.name, 'GET') || {}).sha;
+        if (sha) {
+          await apiGitHub(cfg, 'photos/' + f.name, 'DELETE', {
+            message: 'Carnet : retrait de ' + f.name,
+            sha,
             branch: cfg.branche || 'main',
           });
           retirees++;
         }
       } catch (_) { /* une photo déjà absente n'est pas un échec */ }
-      delete publie.photos[nom];
+      delete publie.photos[f.name];
     }
 
     await ecrirePref('publie', publie);
@@ -5645,7 +5670,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v12';
+const VERSION_APP = 'carnet-v13';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.
