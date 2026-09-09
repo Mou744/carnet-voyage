@@ -96,8 +96,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #entete {
   position: sticky; top: 0; z-index: 30;
   background: var(--papier);
-  padding: calc(env(safe-area-inset-top) + 0.7rem) 1rem 0.55rem;
-  display: flex; align-items: baseline; gap: 0.6rem;
+  padding: calc(env(safe-area-inset-top) + 0.7rem) 1rem 0.5rem;
+}
+.entete__ligne { display: flex; align-items: baseline; gap: 0.6rem; }
+
+/* Onglets : du texte sur le papier, et un filet au stylo sous l'actif.
+   La même grammaire que la marge et les réglures du journal. */
+.onglets {
+  display: flex; gap: 0.15rem;
+  margin: 0.5rem -0.45rem -0.05rem;
+  overflow-x: auto; scrollbar-width: none;
+}
+.onglets::-webkit-scrollbar { display: none; }
+.onglets button {
+  flex: 0 0 auto; position: relative;
+  background: none; border: 0; cursor: pointer;
+  color: var(--graphite); font-size: 0.87rem;
+  padding: 0.3rem 0.45rem 0.4rem;
+}
+.onglets button[aria-current="page"] { color: var(--encre); font-weight: 600; }
+.onglets button[aria-current="page"]::after {
+  content: ""; position: absolute; left: 0.45rem; right: 0.45rem; bottom: 0;
+  height: 2px; background: var(--bille); border-radius: 1px;
 }
 #entete h1 {
   font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em;
@@ -1188,7 +1208,7 @@ function rendre() {
   const conteneur = $('#vue');
   conteneur.textContent = '';
   $('#entete').hidden = false;
-  $('#barre').hidden = !['journal', 'lieu', 'argent'].includes(etat.vue.nom);
+  $('#barre').hidden = !['journal', 'lieu', 'argent', 'carte'].includes(etat.vue.nom);
 
   rendreEntete();
   rendreBarre();
@@ -1214,40 +1234,61 @@ function rendre() {
 
 /* ------------------------------------------------------------- en-tête ---- */
 
+/*
+  Les quatre écrans que l'on consulte sont en ligne, sous le titre : un seul
+  appui pour passer de l'un à l'autre. Ce que l'on gère plutôt qu'on ne
+  consulte — corbeille, réglages, index des lieux — reste derrière le « ⋯ ».
+*/
+const ONGLETS = [
+  ['journal', 'Journal'],
+  ['argent', 'Argent'],
+  ['carte', 'Carte'],
+  ['partage', 'Partage'],
+];
+const estVuePrincipale = (nom) => ONGLETS.some(([n]) => n === nom);
+
 function rendreEntete() {
   const e = $('#entete');
   e.textContent = '';
 
-  if (etat.vue.nom !== 'journal') {
-    const titres = { lieu: 'Lieu', argent: 'Argent', carte: 'Carte', partage: 'Partage', corbeille: 'Corbeille', reglages: 'Réglages' };
-    e.append(
+  if (!estVuePrincipale(etat.vue.nom)) {
+    const titres = { lieu: 'Lieu', corbeille: 'Corbeille', reglages: 'Réglages' };
+    e.append(h('div', { class: 'entete__ligne' },
       h('button', { class: 'retour', onclick: () => history.back() },
         svg(ICONES.fleche), 'Carnet'),
       h('h1', { style: { marginLeft: 'auto', fontSize: '0.9rem', color: 'var(--graphite)' } },
-        titres[etat.vue.nom] || ''),
-    );
+        titres[etat.vue.nom] || '')));
     return;
   }
 
   const ville = etat.prefs.ville_courante;
   e.append(
-    h('h1', null, 'Carnet'),
-    h('button', {
-      class: 'entete__ville', onclick: feuilleVille,
-      'aria-label': 'Changer la ville courante',
-    },
-      ville && ville.ville
-        ? [h('b', null, ville.ville), ville.pays ? ', ' + ville.pays : '']
-        : 'Où êtes-vous ?'),
-    h('div', { class: 'entete__actions' },
+    h('div', { class: 'entete__ligne' },
+      h('h1', null, 'Carnet'),
       h('button', {
-        class: 'ico', 'aria-label': 'Rechercher et filtrer',
-        'aria-pressed': filtresActifs() ? 'true' : 'false',
-        onclick: feuilleFiltres,
-      }, svg(ICONES.recherche)),
-      h('button', { class: 'ico', 'aria-label': 'Menu', onclick: feuilleMenu },
-        svg(ICONES.points, '2.4')),
+        class: 'entete__ville', onclick: feuilleVille,
+        'aria-label': 'Changer la ville courante',
+      },
+        ville && ville.ville
+          ? [h('b', null, ville.ville), ville.pays ? ', ' + ville.pays : '']
+          : 'Où êtes-vous ?'),
+      h('div', { class: 'entete__actions' },
+        // La recherche filtre le journal : elle n'a de sens que là.
+        etat.vue.nom === 'journal' ? h('button', {
+          class: 'ico', 'aria-label': 'Rechercher et filtrer',
+          'aria-pressed': filtresActifs() ? 'true' : 'false',
+          onclick: feuilleFiltres,
+        }, svg(ICONES.recherche)) : null,
+        h('button', { class: 'ico', 'aria-label': 'Menu', onclick: feuilleMenu },
+          svg(ICONES.points, '2.4')),
+      ),
     ),
+    h('nav', { class: 'onglets', 'aria-label': 'Sections du carnet' },
+      ONGLETS.map(([nom, libelle]) => h('button', {
+        type: 'button',
+        'aria-current': etat.vue.nom === nom ? 'page' : null,
+        onclick: () => { if (etat.vue.nom !== nom) naviguer({ nom }); },
+      }, libelle))),
   );
 }
 
@@ -3546,6 +3587,247 @@ function vueCarte() {
   return frag;
 }
 
+/* ==========================================================================
+   DONNÉES D'EXEMPLE
+
+   Pour juger les écrans sans avoir vécu le voyage. Tout ce qui est créé ici
+   porte `exemple: true` : un seul bouton le retire, sans jamais toucher à vos
+   vraies entrées.
+   ========================================================================== */
+
+const EXEMPLE_LIEUX = [
+  // Tokyo — les huit premiers jours
+  ['Nakamise-dōri', 'boutique', 'Tokyo', 'Japon', 35.7113, 139.7967, 4, ['souvenir'], 'L’odeur du sucre chaud sur toute la rue.'],
+  ['Sensō-ji', 'activité', 'Tokyo', 'Japon', 35.7148, 139.7967, 5, ['temple'], 'L’encens à sept heures du matin, avant les cars.'],
+  ['Ichiran Shibuya', 'restaurant', 'Tokyo', 'Japon', 35.6595, 139.7005, 4, [], 'Seul dans une cabine, et c’est très bien ainsi.'],
+  ['Ryokan Asakusa', 'hébergement', 'Tokyo', 'Japon', 35.7118, 139.7920, 4, [], ''],
+  ['Gare de Tokyo', 'transport', 'Tokyo', 'Japon', 35.6812, 139.7671, 3, [], ''],
+  ['Don Quijote Shibuya', 'boutique', 'Tokyo', 'Japon', 35.6938, 139.7034, 2, [], 'Six étages de bazar lumineux.'],
+  // Kyoto — la deuxième semaine
+  ['Fushimi Inari', 'activité', 'Kyoto', 'Japon', 34.9671, 135.7727, 5, ['temple', 'coup de cœur'], 'Monter jusqu’à ce que les gens disparaissent.'],
+  ['Nishiki Market', 'boutique', 'Kyoto', 'Japon', 35.0050, 135.7649, 4, [], ''],
+  ['Ryokan Gion', 'hébergement', 'Kyoto', 'Japon', 35.0037, 135.7788, 5, ['coup de cœur'], 'Tatamis, et le bruit de la pluie sur la cour.'],
+  ['Kissa Yoshinaga', 'restaurant', 'Kyoto', 'Japon', 35.0116, 135.7681, 5, [], 'Un café servi en huit minutes, par un homme qui ne parle pas.'],
+  ['Arashiyama', 'activité', 'Kyoto', 'Japon', 35.0094, 135.6668, 4, [], ''],
+  // Séoul — la dernière semaine
+  ['Gyeongbokgung', 'activité', 'Séoul', 'Corée du Sud', 37.5796, 126.9770, 5, [], 'La relève de la garde, sous la neige fondue.'],
+  ['Myeongdong', 'boutique', 'Séoul', 'Corée du Sud', 37.5636, 126.9827, 3, [], ''],
+  ['Tosokchon', 'restaurant', 'Séoul', 'Corée du Sud', 37.5779, 126.9720, 5, ['coup de cœur'], 'La soupe de poulet au ginseng, un jour de grand froid.'],
+  ['Hostel Bukchon', 'hébergement', 'Séoul', 'Corée du Sud', 37.5826, 126.9830, 3, [], ''],
+];
+
+/**
+ * Fabrique une photo plausible sans rien télécharger : des bandes de couleur
+ * et quelques formes, encodées par la même chaîne que les vraies photos.
+ */
+async function photoExemple(graine) {
+  const c = document.createElement('canvas');
+  c.width = 1200; c.height = 900;
+  const ctx = c.getContext('2d');
+
+  // Un générateur déterministe : la même graine redonne la même image.
+  let n = graine * 9301 + 49297;
+  const alea = () => { n = (n * 9301 + 49297) % 233280; return n / 233280; };
+
+  const teinte = Math.floor(alea() * 360);
+  const ciel = ctx.createLinearGradient(0, 0, 0, c.height);
+  ciel.addColorStop(0, 'hsl(' + teinte + ' 45% 78%)');
+  ciel.addColorStop(1, 'hsl(' + ((teinte + 40) % 360) + ' 35% 55%)');
+  ctx.fillStyle = ciel;
+  ctx.fillRect(0, 0, c.width, c.height);
+
+  const horizon = c.height * (0.55 + alea() * 0.2);
+  ctx.fillStyle = 'hsl(' + ((teinte + 200) % 360) + ' 25% ' + (22 + alea() * 12) + '%)';
+  ctx.beginPath();
+  ctx.moveTo(0, horizon);
+  for (let x = 0; x <= c.width; x += c.width / 6) {
+    ctx.lineTo(x, horizon - alea() * 120);
+  }
+  ctx.lineTo(c.width, c.height);
+  ctx.lineTo(0, c.height);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < 3 + Math.floor(alea() * 3); i++) {
+    ctx.fillStyle = 'hsl(' + ((teinte + 160 + i * 25) % 360) + ' 40% ' + (35 + i * 8) + '%)';
+    const l = 60 + alea() * 160;
+    ctx.fillRect(alea() * (c.width - l), horizon - alea() * 200, l, c.height);
+  }
+  ctx.globalAlpha = 1;
+
+  const type = await detecterFormat();
+  const grand = dessiner(c, PHOTO_MAX_PX);
+  const petit = dessiner(c, VIGNETTE_MAX_PX);
+  const blob = await versBlob(grand, type, PHOTO_QUALITE);
+  const vignette = await versBlob(petit, type, PHOTO_QUALITE);
+  const id = uid();
+  return {
+    enregistrement: {
+      id, blob, vignette, type_mime: type,
+      largeur: grand.width, hauteur: grand.height, poids: blob.size,
+      cree_le: new Date().toISOString(), parent_id: null, exemple: true,
+    },
+    reference: { id, l: grand.width, h: grand.height },
+  };
+}
+
+const compteExemples = () =>
+  [...etat.lieux.values()].filter((l) => l.exemple).length
+  + etat.evenements.filter((e) => e.exemple).length;
+
+async function remplirExemples() {
+  const t = toast('Fabrication du voyage d’exemple…', [], 0);
+  const dire = (m) => { const z = t.el.querySelector('.toast__texte'); if (z) z.textContent = m; };
+
+  try {
+    const TAUX = { JPY: 0.0058, KRW: 0.00068 };
+    const jour = (n) => decalerJours(isoLocal(), n - 21);   // trois semaines jusqu'à aujourd'hui
+
+    const lieux = EXEMPLE_LIEUX.map(([nom, type, ville, pays, lat, lon, note, tags, mot], i) => ({
+      id: uid(), nom, type, ville, pays,
+      latitude: lat, longitude: lon, adresse: '',
+      note, commentaire: mot, tags: [...tags], photos: [],
+      cree_le: new Date().toISOString(), supprime_le: null,
+      partage: i % 3 !== 2,          // de quoi tester l'écran Partage
+      exemple: true,
+    }));
+
+    // [indice du lieu, jour, heure, type, montant, devise, catégorie, bénéficiaire, statut, mot, photo ?]
+    const scenario = [
+      [4, 1, '07:40', 'depense', 3190, 'JPY', 'transport', '', '', 'Le train depuis l’aéroport.', false],
+      [3, 1, '14:00', 'depense', 9800, 'JPY', 'hébergement', '', '', '', true],
+      [1, 2, '07:10', 'visite', null, null, '', '', '', 'Arrivé avant tout le monde.', true],
+      [0, 2, '10:30', 'achat', 3200, 'JPY', 'souvenir', 'Marie', 'acheté', 'Un éventail en papier.', true],
+      [2, 2, '13:15', 'depense', 1290, 'JPY', 'nourriture', '', '', '', false],
+      [5, 3, '19:40', 'achat', 2480, 'JPY', 'cadeau', 'Paul', 'acheté', 'Des KitKat au thé vert.', false],
+      [2, 3, '20:30', 'depense', 1450, 'JPY', 'nourriture', '', '', '', true],
+      [3, 4, '09:00', 'depense', 9800, 'JPY', 'hébergement', '', '', '', false],
+      [1, 5, '16:20', 'visite', null, null, '', '', '', '', true],
+      [0, 6, '11:00', 'achat', 8900, 'JPY', 'cadeau', 'Maman', 'idée', 'Un furoshiki, si je repasse.', false],
+      [2, 7, '12:40', 'depense', 1180, 'JPY', 'nourriture', '', '', '', false],
+      [4, 8, '08:15', 'depense', 13320, 'JPY', 'transport', '', '', 'Shinkansen pour Kyoto.', true],
+      [8, 8, '15:00', 'depense', 12000, 'JPY', 'hébergement', '', '', 'Deux nuits.', true],
+      [6, 9, '06:50', 'visite', null, null, '', '', '', 'Monter jusqu’au silence.', true],
+      [9, 9, '10:30', 'depense', 650, 'JPY', 'nourriture', '', '', '', false],
+      [7, 9, '17:00', 'achat', 2200, 'JPY', 'souvenir', '', 'acheté', 'Des baguettes en bois de cerisier.', false],
+      [10, 10, '09:20', 'visite', null, null, '', '', '', 'La bambouseraie, à l’heure où elle est vide.', true],
+      [9, 10, '15:45', 'depense', 780, 'JPY', 'nourriture', '', '', '', false],
+      [8, 11, '09:00', 'depense', 12000, 'JPY', 'hébergement', '', '', '', false],
+      [7, 11, '11:30', 'achat', 4500, 'JPY', 'cadeau', 'Marie', 'offert', 'Un tablier de cuisine.', false],
+      [6, 12, '07:00', 'visite', null, null, '', '', '', '', false],
+      [9, 13, '08:30', 'depense', 620, 'JPY', 'nourriture', '', '', '', true],
+      [4, 14, '11:00', 'depense', 24500, 'JPY', 'transport', '', '', 'Vol pour Séoul.', false],
+      [14, 14, '18:00', 'depense', 62000, 'KRW', 'hébergement', '', '', 'Quatre nuits.', true],
+      [11, 15, '10:00', 'visite', null, null, '', '', '', 'La relève de la garde.', true],
+      [13, 15, '13:20', 'depense', 19000, 'KRW', 'nourriture', '', '', 'Soupe au ginseng.', true],
+      [12, 16, '16:40', 'achat', 34000, 'KRW', 'cadeau', 'Paul', 'acheté', '', false],
+      [12, 16, '17:10', 'achat', 28000, 'KRW', 'cadeau', 'Marie', 'idée', 'Crème pour les mains, à confirmer.', false],
+      [13, 17, '12:00', 'depense', 14000, 'KRW', 'nourriture', '', '', '', false],
+      [11, 18, '09:30', 'visite', null, null, '', '', '', '', false],
+      [12, 18, '20:00', 'depense', 22000, 'KRW', 'divers', '', '', '', false],
+      [14, 19, '09:00', 'depense', 62000, 'KRW', 'hébergement', '', '', '', false],
+      [13, 20, '19:30', 'depense', 26000, 'KRW', 'nourriture', '', '', 'Le dernier vrai repas.', true],
+      [12, 21, '10:00', 'achat', 12000, 'KRW', 'souvenir', '', 'acheté', '', false],
+    ];
+
+    // Les photos d'abord : leur fabrication est la partie lente.
+    const aPhoto = scenario.filter((s) => s[10]).length;
+    const photos = [];
+    for (let i = 0; i < aPhoto; i++) {
+      dire('Photo ' + (i + 1) + ' sur ' + aPhoto + '…');
+      photos.push(await photoExemple(i + 1));
+      await delai(0);                 // on rend la main : l'interface reste vivante
+    }
+
+    let curseurPhoto = 0;
+    const evenements = scenario.map(([iLieu, j, heure, type, montant, devise, categorie, benef, statut, mot, avecPhoto]) => {
+      const ev = {
+        id: uid(), lieu_id: lieux[iLieu].id,
+        date: jour(j), heure, type,
+        montant: montant ?? null,
+        devise: devise || 'EUR',
+        taux_vers_eur: devise ? TAUX[devise] : 1,
+        categorie, beneficiaire: benef, statut_achat: statut,
+        commentaire: mot, photos: [],
+        cree_le: new Date().toISOString(), supprime_le: null, exemple: true,
+      };
+      if (avecPhoto && curseurPhoto < photos.length) {
+        const p = photos[curseurPhoto++];
+        p.enregistrement.parent_id = ev.id;
+        ev.photos.push(p.reference);
+      }
+      return ev;
+    });
+
+    // Deux photos pour illustrer des fiches de lieu.
+    for (const i of [6, 8]) {
+      const p = await photoExemple(100 + i);
+      p.enregistrement.parent_id = lieux[i].id;
+      photos.push(p);
+      lieux[i].photos.push(p.reference);
+    }
+
+    dire('Enregistrement…');
+    await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+      for (const p of photos) s.photos.put(p.enregistrement);
+      for (const l of lieux) s.lieux.put(l);
+      for (const e of evenements) s.evenements.put(e);
+    });
+
+    // Réglages utiles, sans écraser les vôtres.
+    await ecrirePref('taux', { ...TAUX, ...(etat.prefs.taux || {}) });
+    if (!etat.prefs.ville_courante || !etat.prefs.ville_courante.ville) {
+      await ecrirePref('ville_courante', { ville: 'Séoul', pays: 'Corée du Sud' });
+    }
+    if (!etat.prefs.budget) {
+      await ecrirePref('budget', { montant: 2500, debut: jour(1), fin: jour(21) });
+    }
+
+    await chargerEtat();
+    etat.filtres = videsFiltres();
+    etat.vue = { nom: 'journal' };
+    rendre();
+    t.fermer();
+    toast(lieux.length + ' lieux et ' + evenements.length + ' entrées ajoutés.', [], 7000);
+  } catch (err) {
+    t.fermer();
+    console.error(err);
+    toast(messageErreurEcriture(err), [], 9000);
+  }
+}
+
+async function retirerExemples() {
+  const lieux = [...etat.lieux.values()].filter((l) => l.exemple);
+  const evs = etat.evenements.filter((e) => e.exemple);
+  if (!lieux.length && !evs.length) return toast('Aucune donnée d’exemple.');
+
+  if (!await confirmer({
+    titre: 'Retirer les exemples',
+    message: lieux.length + ' lieux et ' + evs.length + ' entrées d’exemple seront '
+      + 'effacés définitivement, avec leurs photos. Vos vraies entrées ne sont pas touchées.',
+    labelOk: 'Retirer', danger: true,
+  })) return;
+
+  const t = toast('Nettoyage…', [], 0);
+  try {
+    const photos = (await lireTout('photos')).filter((p) => p.exemple);
+    await ecrire(['photos', 'lieux', 'evenements'], (s) => {
+      for (const p of photos) s.photos.delete(p.id);
+      for (const e of evs) s.evenements.delete(e.id);
+      for (const l of lieux) s.lieux.delete(l.id);
+    });
+    await chargerEtat();
+    etat.filtres = videsFiltres();
+    rendre();
+    t.fermer();
+    toast('Données d’exemple retirées.');
+  } catch (err) {
+    t.fermer();
+    toast(messageErreurEcriture(err), [], 9000);
+  }
+}
+
 /* ----------------------------------------------------------- corbeille ---- */
 
 function vueCorbeille() {
@@ -3636,6 +3918,27 @@ function vueReglages() {
     h('button', { class: 'bouton bouton--calme', onclick: () => feuilleTaux(null) }, 'Ajouter un taux')));
 
   frag.append(
+    h('div', { class: 'sous-titre' }, 'Données d’exemple'),
+    (() => {
+      const n = compteExemples();
+      return n
+        ? h('div', null,
+          h('p', { class: 'note-info', style: { margin: '0 1rem' } },
+            n + ' éléments d’exemple sont présents. Ils portent une marque : les retirer '
+            + 'ne touche à rien d’autre.'),
+          h('div', { style: { padding: '0.7rem 1rem' } },
+            h('button', { class: 'bouton bouton--danger', onclick: retirerExemples },
+              'Retirer les données d’exemple')))
+        : h('div', null,
+          h('p', { class: 'note-info', style: { margin: '0 1rem' } },
+            'Trois semaines fictives entre Tokyo, Kyoto et Séoul : 15 lieux, 34 entrées, '
+            + 'des photos, deux devises et un budget. De quoi juger tous les écrans d’un '
+            + 'coup, et un bouton pour tout retirer ensuite.'),
+          h('div', { style: { padding: '0.7rem 1rem' } },
+            h('button', { class: 'bouton bouton--calme', onclick: remplirExemples },
+              'Remplir avec des données d’exemple')));
+    })(),
+
     h('div', { class: 'sous-titre' }, 'Sauvegarde'),
     h('button', { class: 'rangee', onclick: feuilleSauvegarde },
       h('div', { class: 'rangee__texte' },
@@ -3844,21 +4147,13 @@ function confirmer({ titre, message, labelOk, danger }) {
 function feuilleMenu() {
   const f = ouvrirFeuille({
     titre: 'Carnet',
+    // Argent, Carte et Partage sont désormais des onglets : ne reste ici que
+    // ce qu'on ouvre rarement.
     corps: () => h('div', null,
       h('button', {
-        class: 'bouton',
-        onclick: () => f.fermer(false, () => naviguer({
-          nom: 'argent', mode: 'semaine', ancre: isoLocal(),
-        })),
-      }, 'Argent'),
-      h('button', {
         class: 'bouton bouton--calme',
-        onclick: () => f.fermer(false, () => naviguer({ nom: 'carte', ville: '' })),
-      }, 'Carte'),
-      h('button', {
-        class: 'bouton bouton--calme',
-        onclick: () => f.fermer(false, () => naviguer({ nom: 'partage' })),
-      }, 'Partage'),
+        onclick: () => f.fermer(false, feuilleListeLieux),
+      }, 'Tous les lieux'),
       h('button', {
         class: 'bouton bouton--calme',
         onclick: () => f.fermer(false, () => naviguer({ nom: 'corbeille' })),
@@ -3867,10 +4162,6 @@ function feuilleMenu() {
         class: 'bouton bouton--calme',
         onclick: () => f.fermer(false, () => naviguer({ nom: 'reglages' })),
       }, 'Réglages'),
-      h('button', {
-        class: 'bouton bouton--calme',
-        onclick: () => f.fermer(false, feuilleListeLieux),
-      }, 'Tous les lieux'),
     ),
   });
 }
@@ -5255,7 +5546,7 @@ document.addEventListener('visibilitychange', async () => {
  * À garder identique à VERSION dans sw.js — c'est la comparaison des deux qui
  * dit la vérité sur l'état de l'app.
  */
-const VERSION_APP = 'carnet-v10';
+const VERSION_APP = 'carnet-v11';
 
 /**
  * Demande au service worker aux commandes quelle version il sert.
