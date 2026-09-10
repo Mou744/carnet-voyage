@@ -1,21 +1,468 @@
 {
  "version": 1,
- "genere_le": "2026-09-09T19:37:11.527Z",
+ "genere_le": "2026-09-10T19:00:36.017Z",
  "titre": "Carnet de voyage",
  "options": {
   "montants": true,
   "gps": true
  },
  "stats": {
-  "lieux": 2,
-  "villes": 1,
-  "pays": 1,
-  "photos": 1,
-  "premier_jour": "2026-09-09",
-  "dernier_jour": "2026-09-09",
-  "jours": 1
+  "lieux": 17,
+  "villes": 4,
+  "pays": 3,
+  "photos": 17,
+  "premier_jour": "2026-08-21",
+  "dernier_jour": "2026-09-10",
+  "jours": 21
  },
  "lieux": [
+  {
+   "id": "0db61401-ea6f-44e4-8e64-27d7d78e1e72",
+   "nom": "Ichiran Shibuya",
+   "type": "restaurant",
+   "ville": "Tokyo",
+   "pays": "Japon",
+   "note": 4,
+   "commentaire": "Seul dans une cabine, et c’est très bien ainsi.",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-22",
+     "heure": "13:15",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 1290,
+     "devise": "JPY",
+     "euros": 7.48
+    },
+    {
+     "date": "2026-08-23",
+     "heure": "20:30",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [
+      {
+       "f": "09f10eff-a56d-413a-9e70-f193444f6d4c.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 1450,
+     "devise": "JPY",
+     "euros": 8.41
+    },
+    {
+     "date": "2026-08-27",
+     "heure": "12:40",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 1180,
+     "devise": "JPY",
+     "euros": 6.84
+    }
+   ],
+   "latitude": 35.6595,
+   "longitude": 139.7005
+  },
+  {
+   "id": "27a72e2b-7355-44fb-ab4b-c4508842f63b",
+   "nom": "Arashiyama",
+   "type": "activité",
+   "ville": "Kyoto",
+   "pays": "Japon",
+   "note": 4,
+   "commentaire": "",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-30",
+     "heure": "09:20",
+     "type": "visite",
+     "commentaire": "La bambouseraie, à l’heure où elle est vide.",
+     "photos": [
+      {
+       "f": "a19936e5-94b2-4ee5-afcf-f9ef77936217.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ]
+    }
+   ],
+   "latitude": 35.0094,
+   "longitude": 135.6668
+  },
+  {
+   "id": "3bf90b74-dd07-4d55-904f-75cc99deef89",
+   "nom": "Kissa Yoshinaga",
+   "type": "restaurant",
+   "ville": "Kyoto",
+   "pays": "Japon",
+   "note": 5,
+   "commentaire": "Un café servi en huit minutes, par un homme qui ne parle pas.",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-29",
+     "heure": "10:30",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 650,
+     "devise": "JPY",
+     "euros": 3.77
+    },
+    {
+     "date": "2026-08-30",
+     "heure": "15:45",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 780,
+     "devise": "JPY",
+     "euros": 4.52
+    },
+    {
+     "date": "2026-09-02",
+     "heure": "08:30",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [
+      {
+       "f": "831b4556-7fa7-435c-a369-02b3e1930379.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 620,
+     "devise": "JPY",
+     "euros": 3.6
+    }
+   ],
+   "latitude": 35.0116,
+   "longitude": 135.7681
+  },
+  {
+   "id": "3c4b2736-6a24-474f-884b-a5bfec9f66fe",
+   "nom": "Don Quijote Shibuya",
+   "type": "boutique",
+   "ville": "Tokyo",
+   "pays": "Japon",
+   "note": 2,
+   "commentaire": "Six étages de bazar lumineux.",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-23",
+     "heure": "19:40",
+     "type": "achat",
+     "commentaire": "Des KitKat au thé vert.",
+     "photos": [],
+     "montant": 2480,
+     "devise": "JPY",
+     "euros": 14.38
+    }
+   ],
+   "latitude": 35.6938,
+   "longitude": 139.7034
+  },
+  {
+   "id": "45418b72-ae07-4cb6-94ef-6fe9fe4e6ec8",
+   "nom": "Ryokan Gion",
+   "type": "hébergement",
+   "ville": "Kyoto",
+   "pays": "Japon",
+   "note": 5,
+   "commentaire": "Tatamis, et le bruit de la pluie sur la cour.",
+   "tags": [
+    "coup de cœur"
+   ],
+   "photos": [
+    {
+     "f": "49dea84f-b679-403b-8655-1953409a4022.jpg",
+     "l": 1200,
+     "h": 900
+    }
+   ],
+   "evenements": [
+    {
+     "date": "2026-08-28",
+     "heure": "15:00",
+     "type": "depense",
+     "commentaire": "Deux nuits.",
+     "photos": [
+      {
+       "f": "3cc7c4ce-9b72-4b88-9fa2-5d8fa135166e.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 12000,
+     "devise": "JPY",
+     "euros": 69.6
+    },
+    {
+     "date": "2026-08-31",
+     "heure": "09:00",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 12000,
+     "devise": "JPY",
+     "euros": 69.6
+    }
+   ],
+   "latitude": 35.0037,
+   "longitude": 135.7788
+  },
+  {
+   "id": "70b57b1d-e60c-4bbf-9324-13bb37258eb8",
+   "nom": "Ryokan Asakusa",
+   "type": "hébergement",
+   "ville": "Tokyo",
+   "pays": "Japon",
+   "note": 4,
+   "commentaire": "",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-21",
+     "heure": "14:00",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [
+      {
+       "f": "cb6b7dce-53a8-49cc-bbca-c08f7e37dc65.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 9800,
+     "devise": "JPY",
+     "euros": 56.84
+    },
+    {
+     "date": "2026-08-24",
+     "heure": "09:00",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 9800,
+     "devise": "JPY",
+     "euros": 56.84
+    }
+   ],
+   "latitude": 35.7118,
+   "longitude": 139.792
+  },
+  {
+   "id": "7757d631-f64a-4855-9ba3-29548f1ece03",
+   "nom": "Gare de Tokyo",
+   "type": "transport",
+   "ville": "Tokyo",
+   "pays": "Japon",
+   "note": 3,
+   "commentaire": "",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-21",
+     "heure": "07:40",
+     "type": "depense",
+     "commentaire": "Le train depuis l’aéroport.",
+     "photos": [],
+     "montant": 3190,
+     "devise": "JPY",
+     "euros": 18.5
+    },
+    {
+     "date": "2026-08-28",
+     "heure": "08:15",
+     "type": "depense",
+     "commentaire": "Shinkansen pour Kyoto.",
+     "photos": [
+      {
+       "f": "c73f16d4-6704-4267-b91d-7a0cd6722c7b.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 13320,
+     "devise": "JPY",
+     "euros": 77.26
+    },
+    {
+     "date": "2026-09-03",
+     "heure": "11:00",
+     "type": "depense",
+     "commentaire": "Vol pour Séoul.",
+     "photos": [],
+     "montant": 24500,
+     "devise": "JPY",
+     "euros": 142.1
+    }
+   ],
+   "latitude": 35.6812,
+   "longitude": 139.7671
+  },
+  {
+   "id": "7b73f01f-7341-4a09-af2c-5f935673a794",
+   "nom": "Myeongdong",
+   "type": "boutique",
+   "ville": "Séoul",
+   "pays": "Corée du Sud",
+   "note": 3,
+   "commentaire": "",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-09-05",
+     "heure": "16:40",
+     "type": "achat",
+     "commentaire": "",
+     "photos": [],
+     "montant": 34000,
+     "devise": "KRW",
+     "euros": 23.12
+    },
+    {
+     "date": "2026-09-07",
+     "heure": "20:00",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 22000,
+     "devise": "KRW",
+     "euros": 14.96
+    },
+    {
+     "date": "2026-09-10",
+     "heure": "10:00",
+     "type": "achat",
+     "commentaire": "",
+     "photos": [],
+     "montant": 12000,
+     "devise": "KRW",
+     "euros": 8.16
+    }
+   ],
+   "latitude": 37.5636,
+   "longitude": 126.9827
+  },
+  {
+   "id": "7d629fc6-957f-4302-a3e1-7e1dee7c5e1c",
+   "nom": "Sensō-ji",
+   "type": "activité",
+   "ville": "Tokyo",
+   "pays": "Japon",
+   "note": 5,
+   "commentaire": "L’encens à sept heures du matin, avant les cars.",
+   "tags": [
+    "temple"
+   ],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-22",
+     "heure": "07:10",
+     "type": "visite",
+     "commentaire": "Arrivé avant tout le monde.",
+     "photos": [
+      {
+       "f": "ad20d610-a5a0-4ff3-9d34-55c13cb91471.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ]
+    },
+    {
+     "date": "2026-08-25",
+     "heure": "16:20",
+     "type": "visite",
+     "commentaire": "",
+     "photos": [
+      {
+       "f": "1e27a8db-57bd-46cd-9ecb-b684aa113282.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ]
+    }
+   ],
+   "latitude": 35.7148,
+   "longitude": 139.7967
+  },
+  {
+   "id": "8a3baf26-1ed1-48c7-be32-93bcb0b5f739",
+   "nom": "Gyeongbokgung",
+   "type": "activité",
+   "ville": "Séoul",
+   "pays": "Corée du Sud",
+   "note": 5,
+   "commentaire": "La relève de la garde, sous la neige fondue.",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-09-04",
+     "heure": "10:00",
+     "type": "visite",
+     "commentaire": "La relève de la garde.",
+     "photos": [
+      {
+       "f": "2568bd4a-84f1-4bf7-82ba-fafd2b3cf388.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ]
+    }
+   ],
+   "latitude": 37.5796,
+   "longitude": 126.977
+  },
+  {
+   "id": "8d9b6d84-ebe6-4c54-b663-6942cbeb3bc7",
+   "nom": "Nishiki Market",
+   "type": "boutique",
+   "ville": "Kyoto",
+   "pays": "Japon",
+   "note": 4,
+   "commentaire": "",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-29",
+     "heure": "17:00",
+     "type": "achat",
+     "commentaire": "Des baguettes en bois de cerisier.",
+     "photos": [],
+     "montant": 2200,
+     "devise": "JPY",
+     "euros": 12.76
+    },
+    {
+     "date": "2026-08-31",
+     "heure": "11:30",
+     "type": "achat",
+     "commentaire": "Un tablier de cuisine.",
+     "photos": [],
+     "montant": 4500,
+     "devise": "JPY",
+     "euros": 26.1
+    }
+   ],
+   "latitude": 35.005,
+   "longitude": 135.7649
+  },
   {
    "id": "9352561b-387c-4f6c-8ef3-6f4d066bdc28",
    "nom": "La chapelle sur erdre",
@@ -57,6 +504,176 @@
    "evenements": [],
    "latitude": 47.304806539396374,
    "longitude": -1.5574728910942455
+  },
+  {
+   "id": "b7dd3836-a4f2-4fea-8607-0a92a3db145e",
+   "nom": "Fushimi Inari",
+   "type": "activité",
+   "ville": "Kyoto",
+   "pays": "Japon",
+   "note": 5,
+   "commentaire": "Monter jusqu’à ce que les gens disparaissent.",
+   "tags": [
+    "temple",
+    "coup de cœur"
+   ],
+   "photos": [
+    {
+     "f": "237b1d39-6ac0-4688-8159-dc9a677720f2.jpg",
+     "l": 1200,
+     "h": 900
+    }
+   ],
+   "evenements": [
+    {
+     "date": "2026-08-29",
+     "heure": "06:50",
+     "type": "visite",
+     "commentaire": "Monter jusqu’au silence.",
+     "photos": [
+      {
+       "f": "3874a63b-3af0-454c-a4a8-d4786dfe9f23.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ]
+    }
+   ],
+   "latitude": 34.9671,
+   "longitude": 135.7727
+  },
+  {
+   "id": "c18e3180-32fe-47ab-9f75-f2648581101c",
+   "nom": "Nakamise-dōri",
+   "type": "boutique",
+   "ville": "Tokyo",
+   "pays": "Japon",
+   "note": 4,
+   "commentaire": "L’odeur du sucre chaud sur toute la rue.",
+   "tags": [
+    "souvenir"
+   ],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-08-22",
+     "heure": "10:30",
+     "type": "achat",
+     "commentaire": "Un éventail en papier.",
+     "photos": [
+      {
+       "f": "df27b4c4-158f-48cf-9f9d-c801c6ab8fd0.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 3200,
+     "devise": "JPY",
+     "euros": 18.56
+    }
+   ],
+   "latitude": 35.7113,
+   "longitude": 139.7967
+  },
+  {
+   "id": "ddd0391b-4b85-4fc7-b57e-2c0b1bda599b",
+   "nom": "Tosokchon",
+   "type": "restaurant",
+   "ville": "Séoul",
+   "pays": "Corée du Sud",
+   "note": 5,
+   "commentaire": "La soupe de poulet au ginseng, un jour de grand froid.",
+   "tags": [
+    "coup de cœur"
+   ],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-09-04",
+     "heure": "13:20",
+     "type": "depense",
+     "commentaire": "Soupe au ginseng.",
+     "photos": [
+      {
+       "f": "229f9101-7789-4f04-b01c-0c1e2a27d914.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 19000,
+     "devise": "KRW",
+     "euros": 12.92
+    },
+    {
+     "date": "2026-09-06",
+     "heure": "12:00",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 14000,
+     "devise": "KRW",
+     "euros": 9.52
+    },
+    {
+     "date": "2026-09-09",
+     "heure": "19:30",
+     "type": "depense",
+     "commentaire": "Le dernier vrai repas.",
+     "photos": [
+      {
+       "f": "b2466ce0-6bb4-4aaf-8730-a391ca57b7aa.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 26000,
+     "devise": "KRW",
+     "euros": 17.68
+    }
+   ],
+   "latitude": 37.5779,
+   "longitude": 126.972
+  },
+  {
+   "id": "edf51cd5-e72f-4e6b-a7a1-a4fa0974c2f8",
+   "nom": "Hostel Bukchon",
+   "type": "hébergement",
+   "ville": "Séoul",
+   "pays": "Corée du Sud",
+   "note": 3,
+   "commentaire": "",
+   "tags": [],
+   "photos": [],
+   "evenements": [
+    {
+     "date": "2026-09-03",
+     "heure": "18:00",
+     "type": "depense",
+     "commentaire": "Quatre nuits.",
+     "photos": [
+      {
+       "f": "89631f32-01b6-45f3-a61f-993670172ca3.jpg",
+       "l": 1200,
+       "h": 900
+      }
+     ],
+     "montant": 62000,
+     "devise": "KRW",
+     "euros": 42.16
+    },
+    {
+     "date": "2026-09-08",
+     "heure": "09:00",
+     "type": "depense",
+     "commentaire": "",
+     "photos": [],
+     "montant": 62000,
+     "devise": "KRW",
+     "euros": 42.16
+    }
+   ],
+   "latitude": 37.5826,
+   "longitude": 126.983
   }
  ]
 }
